@@ -213,64 +213,88 @@ details.fmt p { margin: 8px 0 0; }
 .keys { margin: 0; flex: 1 1 260px; min-width: 0; font-size: 12px; color: var(--muted); }
 .keys b { color: var(--fg); font-weight: 500; }
 
-/* Hotbar, like Rust's belt */
-.hotbar {
-  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
-  display: flex; gap: 6px; max-width: calc(100% - 24px); overflow-x: auto; padding: 2px;
+/* Sandbox: full-screen build view with game-style overlays */
+.workspace.sandbox { grid-template-columns: minmax(0, 1fr); }
+.tool-card { position: absolute; top: 12px; left: 12px; max-width: min(360px, calc(100% - 24px)); pointer-events: none; }
+.base-card {
+  position: absolute; top: 12px; right: 12px; width: 300px; max-width: calc(100% - 24px);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); border-radius: 8px;
 }
+.base-card .field { padding: 6px 9px; font-size: 13.5px; font-weight: 500; }
+.base-stats { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.base-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.base-actions .btn { padding: 5px 9px; font-size: 12px; }
+.upall { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.upall .btn { padding: 5px 9px; font-size: 12px; }
+
+/* Deployables down the right edge of the screen */
+.dock {
+  position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.dock-item {
+  display: flex; align-items: center; gap: 8px; width: 168px; padding: 4px 10px 4px 4px;
+  background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); border-radius: 8px; text-align: left;
+  color: var(--fg); --icon-bg: rgba(24, 27, 25, 1);
+}
+.dock-item:hover { border-color: var(--line-hi); }
+.dock-item[aria-pressed="true"] { border-color: var(--wheel-red); box-shadow: inset 0 0 0 1px var(--wheel-red); }
+.dock-icon { width: 38px; height: 38px; flex: none; color: var(--wheel-cream); }
+.dock-icon svg { width: 100%; height: 100%; display: block; }
+.dock-name { font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Hotbar, like Rust's belt */
+.hotbar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 6px; }
 .slot {
-  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  min-width: 126px; padding: 8px 10px 7px; border-radius: 8px; text-align: left;
-  background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); color: var(--fg);
+  position: relative; width: 84px; height: 84px; padding: 6px 4px 5px; border-radius: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  background: rgba(24, 27, 25, 0.78); border: 1px solid var(--line); color: var(--wheel-cream); --icon-bg: rgba(24, 27, 25, 1);
 }
 .slot:hover { border-color: var(--line-hi); }
-.slot[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.slot kbd { position: absolute; top: 5px; right: 7px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
-.slot[aria-pressed="true"] kbd { color: var(--accent); }
-.slot-name { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.02em; padding-right: 14px; white-space: nowrap; }
-.slot-sub { font-size: 11.5px; color: var(--muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slot[aria-pressed="true"] { background: rgba(56, 74, 98, 0.9); border-color: #6f8fb6; }
+.slot kbd { position: absolute; top: 4px; left: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.slot-icon { width: 46px; height: 46px; margin-top: 4px; }
+.slot-icon svg { width: 100%; height: 100%; display: block; }
+.slot-sub { font-size: 10.5px; color: var(--fg); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
 
-/* Radial wheel */
+/* Line-art icons: stroke follows the text colour, faces fill with --icon-bg */
+.ic { display: block; overflow: visible; }
+.ic polygon, .ic rect { fill: var(--icon-bg); stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.ic.glyph path { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.ic.glyph rect { stroke-width: 2.2; }
+
+/* Radial wheel, modelled on Rust's: cream ring, red line icons, the pointed-at segment turns red and pops out */
+:root { --wheel-cream: #efe4d8; --wheel-red: #c9442d; }
 .wheel {
-  position: absolute; width: 488px; height: 488px; z-index: 6;
+  position: absolute; width: 460px; height: 460px; z-index: 6;
   transform: translate(-50%, -50%) scale(var(--wheel-scale, 1)); transform-origin: center;
   touch-action: none; user-select: none;
 }
-.wheel svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.wseg path { fill: rgba(24, 27, 25, 0.88); stroke: var(--line); stroke-width: 1; cursor: pointer; }
-.wseg text { fill: var(--fg); font-family: var(--font-body); font-size: 11.5px; font-weight: 500; text-anchor: middle; pointer-events: none; }
-.wseg.sel path { fill: rgba(62, 55, 33, 0.94); stroke: var(--accent); }
-.wseg.sel text { fill: var(--accent); }
-.wseg.hot path { fill: var(--accent); stroke: var(--accent); }
-.wseg.hot text { fill: var(--accent-ink); }
-.wsw { stroke: rgba(0, 0, 0, 0.35); pointer-events: none; }
+.wheel svg#wheelSvg { width: 100%; height: 100%; display: block; overflow: visible; }
+.wring { fill: none; stroke: var(--wheel-cream); opacity: 0.96; }
+.wseg { color: var(--wheel-red); --icon-bg: var(--wheel-cream); cursor: pointer; }
+.wseg path { fill: transparent; stroke: none; }
+.wseg.hot { color: #fff; --icon-bg: var(--wheel-red); }
+.wseg.hot path { fill: var(--wheel-red); }
 .wheel-center {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: 118px; height: 118px; border-radius: 50%; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; text-align: center; gap: 2px; pointer-events: none;
-  background: rgba(24, 27, 25, 0.92); border: 1px solid var(--line);
+  width: 270px; height: 270px; border-radius: 50%; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center;
+  background: radial-gradient(circle, rgba(16, 18, 17, 0.72) 0%, rgba(16, 18, 17, 0.5) 62%, rgba(16, 18, 17, 0) 72%);
+  color: var(--wheel-red); --icon-bg: rgba(40, 30, 26, 0.9);
 }
-.wheel-name { font-family: var(--font-display); font-weight: 600; font-size: 13.5px; line-height: 1.15; padding: 0 8px; text-wrap: balance; }
-.wheel-sub { font-size: 10.5px; color: var(--muted); }
+.wheel.current .wheel-center { opacity: 0.85; }
+.wheel-icon { width: 84px; height: 84px; }
+.wheel-icon svg { width: 100%; height: 100%; }
+.wheel-name { font-family: var(--font-display); font-weight: 700; font-size: 24px; letter-spacing: 0.01em; color: #fff; line-height: 1.1; padding: 0 24px; text-wrap: balance; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+.wheel-sub { font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.82); max-width: 200px; line-height: 1.3; text-wrap: balance; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+
 .lvl { display: inline-flex; align-items: center; gap: 6px; }
 .lvl span { min-width: 92px; text-align: center; font-size: 13px; font-weight: 500; }
 .lvl .tbtn { font-size: 17px; line-height: 1; }
-.spacer { flex: 1 1 0; }
 .tbtn:disabled { opacity: 0.4; cursor: default; }
-.palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.pbtn {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0;
-  border: 1px solid var(--line); background: var(--panel-2); border-radius: 7px;
-  padding: 7px 9px; font-size: 12.5px; text-align: left;
-}
-.pbtn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
-.pbtn kbd { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
-.pbtn:hover { border-color: var(--line-hi); }
-.pbtn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.field-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .field { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; font-size: 14px; }
 .field:focus { border-color: var(--accent); outline: none; }
-.note { margin: 0; font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .now-sub.err { color: var(--danger); }
 
 @media (max-width: 900px) {
@@ -282,9 +306,14 @@ details.fmt p { margin: 8px 0 0; }
   .logcard { flex: none; }
   .log { max-height: 340px; }
 }
-@media (max-width: 640px) {
-  .slot { min-width: 84px; padding: 6px 8px; }
-  .slot-sub { display: none; }
+@media (max-width: 760px) {
+  .slot { width: 64px; height: 64px; }
+  .slot-icon { width: 36px; height: 36px; }
+  .slot-sub, .dock-name { display: none; }
+  .dock-item { width: auto; padding: 4px; }
+  .base-card { top: 8px; right: 8px; width: 46%; padding: 8px; }
+  .base-card .gbar, .base-stats, .base-actions .btn:not(.primary), .upall { display: none; }
+  .tool-card { top: 8px; left: 8px; max-width: 48%; }
 }
 @media (max-width: 420px) {
   .clock { display: none; }
@@ -363,41 +392,55 @@ details.fmt p { margin: 8px 0 0; }
   </section>
 
   <!-- Sandbox -->
-  <main class="workspace" id="view-build" hidden>
+  <main class="workspace sandbox" id="view-build" hidden>
     <section class="stage" aria-label="Sandbox build area">
       <div class="viewport" id="bviewport">
         <canvas id="bcanvas" aria-label="3D build area. Click to use the selected tool, hold right-click for the wheel, drag to orbit."></canvas>
-        <div class="now">
-          <div class="now-card">
-            <div class="now-kicker" id="bKicker">Building Plan · Ground floor</div>
-            <div class="now-label" id="bLabel">Foundation</div>
-            <div class="now-sub" id="bHint">Point at the ground</div>
+
+        <div class="now-card tool-card">
+          <div class="now-kicker" id="bKicker">Building Plan · Ground floor</div>
+          <div class="now-label" id="bLabel">Foundation</div>
+          <div class="now-sub" id="bHint">Point at the ground</div>
+        </div>
+
+        <div class="base-card">
+          <input class="field" id="bName" type="text" placeholder="Name your base" maxlength="60" autocomplete="off" aria-label="Base name">
+          <div class="base-stats" id="bStatsLine">0 pieces · 0 items · 00:00 build</div>
+          <div class="gbar" id="bGrades"></div>
+          <div class="base-actions">
+            <button class="btn primary" id="bReplay" type="button">Watch replay</button>
+            <button class="btn" id="bUpAllToggle" type="button">Upgrade all</button>
+            <button class="btn" id="bCopy" type="button">Copy log</button>
+            <button class="btn" id="bClear" type="button">New build</button>
+            <button class="btn" id="bTerrain" type="button">New terrain</button>
           </div>
-          <div class="now-card clock">
-            <div class="small">BUILD CLOCK</div>
-            <div class="big" id="bClock">00:00</div>
-            <div class="small" id="bCount">0 pieces</div>
+          <div class="upall" id="upAllBox" hidden>
+            <label class="sel" for="upAllGrade">Upgrade every piece to <select id="upAllGrade"></select></label>
+            <button class="btn" id="bUpAll" type="button">Upgrade</button>
           </div>
         </div>
 
+        <div class="dock" id="deployDock" role="group" aria-label="Deployables"></div>
+
         <div class="hotbar" id="hotbar" role="group" aria-label="Tools">
-          <button class="slot" type="button" data-slot="plan" aria-pressed="true">
-            <kbd>1</kbd><span class="slot-name">Building Plan</span><span class="slot-sub" id="slotPlanSub">Foundation</span>
+          <button class="slot" type="button" data-slot="plan" aria-pressed="true" title="Building Plan (1)">
+            <kbd>1</kbd><span class="slot-icon" id="slotPlanIcon"></span><span class="slot-sub" id="slotPlanSub">Foundation</span>
           </button>
-          <button class="slot" type="button" data-slot="hammer" aria-pressed="false">
-            <kbd>2</kbd><span class="slot-name">Hammer</span><span class="slot-sub" id="slotHammerSub">Upgrade to Stone</span>
+          <button class="slot" type="button" data-slot="hammer" aria-pressed="false" title="Hammer (2)">
+            <kbd>2</kbd><span class="slot-icon" id="slotHammerIcon"></span><span class="slot-sub" id="slotHammerSub">Upgrade to Stone</span>
           </button>
-          <button class="slot" type="button" data-slot="deploy" aria-pressed="false">
-            <kbd>3</kbd><span class="slot-name">Deployable</span><span class="slot-sub" id="slotDeploySub">Tool Cupboard</span>
-          </button>
-          <button class="slot" type="button" data-slot="tape" aria-pressed="false">
-            <kbd>4</kbd><span class="slot-name">Tape Measure</span><span class="slot-sub">Distance</span>
+          <button class="slot" type="button" data-slot="deploy" aria-pressed="false" title="Deployable (3)">
+            <kbd>3</kbd><span class="slot-icon" id="slotDeployIcon"></span><span class="slot-sub" id="slotDeploySub">Tool Cupboard</span>
           </button>
         </div>
 
         <div class="wheel" id="wheel" hidden>
-          <svg id="wheelSvg" viewBox="-244 -244 488 488" aria-hidden="true"></svg>
-          <div class="wheel-center"><span class="wheel-name" id="wheelName">Building Plan</span><span class="wheel-sub" id="wheelSub">Release on a choice</span></div>
+          <svg id="wheelSvg" viewBox="-230 -230 460 460" aria-hidden="true"></svg>
+          <div class="wheel-center">
+            <span class="wheel-icon" id="wheelIcon"></span>
+            <span class="wheel-name" id="wheelName"></span>
+            <span class="wheel-sub" id="wheelSub"></span>
+          </div>
         </div>
       </div>
       <div class="transport">
@@ -406,7 +449,8 @@ details.fmt p { margin: 8px 0 0; }
           <span id="lvlLabel">Ground floor</span>
           <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
         </div>
-        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1–4</b> tools · <b>R</b> rotate · <b>[ ]</b> floor · drag to orbit, middle-drag or Shift+drag to pan</p>
+        <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above</label>
+        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1–3</b> tools · <b>R</b> rotate · <b>[ ]</b> floor · drag to orbit, middle-drag or Shift+drag to pan</p>
         <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
           <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
         </button>
@@ -415,37 +459,6 @@ details.fmt p { margin: 8px 0 0; }
         </button>
       </div>
     </section>
-
-    <aside class="side">
-      <div class="card">
-        <label class="field-label" for="bName">Base name</label>
-        <input class="field" id="bName" type="text" placeholder="Name your base" maxlength="60" autocomplete="off">
-        <dl class="info-stats" id="bStats"></dl>
-        <div class="gbar" id="bGrades"></div>
-        <div class="info-actions">
-          <button class="btn primary" id="bReplay" type="button">Watch replay</button>
-          <button class="btn" id="bCopy" type="button">Copy log</button>
-          <button class="btn" id="bClear" type="button">New build</button>
-          <button class="btn" id="bTerrain" type="button">New terrain</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>Deployables <small>slot 3</small></h2>
-        <div class="palette" id="palDeploy"></div>
-      </div>
-
-      <div class="card">
-        <h2>Whole base</h2>
-        <div class="row">
-          <label class="sel" for="upAllGrade">Upgrade everything to <select id="upAllGrade"></select></label>
-          <button class="btn" id="bUpAll" type="button">Upgrade</button>
-        </div>
-        <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above the one I'm on</label>
-      </div>
-
-      <p class="note">Pieces snap to each other's edges like in Rust and follow its support rules: walls need a foundation or floor, floors need walls, and anything left unsupported collapses. Foundations sit on the terrain: they can't be buried by a rise or float too high over a dip, and snapped foundations stay level. Deployable sizes are close approximations still being checked against the game. Your build is saved in this browser.</p>
-    </aside>
   </main>
 
   <!-- Base page -->
@@ -879,6 +892,74 @@ function makePiece(e, y0) {
   group.visible = false;
   return { group, structural, level: levelOf(e.pos[1], y0), baseY: e.pos[1] };
 }
+
+// ---------- Line-art icons ----------
+// Draws a piece as a small isometric line drawing from its own model, painter-style, so hidden lines
+// are covered. Colours come from CSS (stroke: currentColor, fill: var(--icon-bg)).
+const ICON_PARTS = {
+  "foundation": [B(3, 1.4, 3, 0, 0.7, 0)],
+  "foundation.triangle": [SLAB(TRI, 1.4, 1.4)],
+  "foundation.steps": [B(3, 1.4, 3, 0, 0.7, -1.5), ...[0.75, 0.5, 0.25].map((top, k) => B(3, top * 1.4, 0.5, 0, top * 0.7, 0.25 + 0.5 * k))],
+  "floor": [B(3, 0.3, 3, 0, 0.15, 0)],
+  "floor.triangle": [SLAB(TRI, 0.3, 0.3)]
+};
+const iconCache = new Map();
+function isoIcon(prefab) {
+  if (iconCache.has(prefab)) return iconCache.get(prefab);
+  const view = [0.62, 0.7, 0.62];
+  const faces = [];
+  (ICON_PARTS[prefab] || partsFor(prefab)).forEach(pt => {
+    const r = (pt.ry || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+    const tr = (x, y, z) => [(pt.x || 0) + x * c + z * s, (pt.y || 0) + y, (pt.z || 0) - x * s + z * c];
+    let fs;
+    if (pt.poly) {
+      const n = pt.poly.length;
+      const top = pt.poly.map((v, i) => tr(v[0], pt.tops[i], v[1]));
+      const bot = pt.poly.map((v, i) => tr(v[0], pt.tops[i] - pt.t, v[1]));
+      fs = [top, bot];
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push([top[i], top[j], bot[j], bot[i]]); }
+    } else {
+      const hw = pt.w / 2, hh = pt.h / 2, hd = pt.d / 2;
+      const V = (a, b, d) => tr(a * hw, b * hh, d * hd);
+      fs = [
+        [V(-1, 1, -1), V(1, 1, -1), V(1, 1, 1), V(-1, 1, 1)], [V(-1, -1, -1), V(1, -1, -1), V(1, -1, 1), V(-1, -1, 1)],
+        [V(1, -1, -1), V(1, 1, -1), V(1, 1, 1), V(1, -1, 1)], [V(-1, -1, -1), V(-1, 1, -1), V(-1, 1, 1), V(-1, -1, 1)],
+        [V(-1, -1, 1), V(1, -1, 1), V(1, 1, 1), V(-1, 1, 1)], [V(-1, -1, -1), V(1, -1, -1), V(1, 1, -1), V(-1, 1, -1)]
+      ];
+    }
+    const all = [].concat(...fs);
+    const pc = [0, 1, 2].map(k => all.reduce((a, v) => a + v[k], 0) / all.length);
+    fs.forEach(f => {
+      // Newell normal, flipped to point away from the part's centre; keep faces turned toward the viewer.
+      let nx = 0, ny = 0, nz = 0;
+      for (let i = 0; i < f.length; i++) {
+        const a = f[i], b = f[(i + 1) % f.length];
+        nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1]);
+      }
+      const fc = [0, 1, 2].map(k => f.reduce((a, v) => a + v[k], 0) / f.length);
+      if (nx * (fc[0] - pc[0]) + ny * (fc[1] - pc[1]) + nz * (fc[2] - pc[2]) < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      if (nx * view[0] + ny * view[1] + nz * view[2] <= 1e-6) return;
+      faces.push({ pts: f, depth: fc[0] * view[0] + fc[1] * view[1] + fc[2] * view[2] });
+    });
+  });
+  faces.sort((a, b) => a.depth - b.depth);
+  const proj = v => [(v[0] - v[2]) * 0.866, -v[1] + (v[0] + v[2]) * 0.5];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  faces.forEach(f => f.pts.forEach(v => { const [x, y] = proj(v); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }));
+  const S = 48, pad = 5, k = (S - pad * 2) / Math.max(x1 - x0, y1 - y0, 0.01);
+  const ox = (S - (x1 - x0) * k) / 2, oy = (S - (y1 - y0) * k) / 2;
+  const polys = faces.map(f => '<polygon points="' + f.pts.map(v => { const [x, y] = proj(v); return ((x - x0) * k + ox).toFixed(1) + "," + ((y - y0) * k + oy).toFixed(1); }).join(" ") + '"/>').join("");
+  const svg = '<svg class="ic" viewBox="0 0 48 48" aria-hidden="true">' + polys + "</svg>";
+  iconCache.set(prefab, svg);
+  return svg;
+}
+// Hand-drawn glyphs for things that aren't pieces.
+const GLYPHS = {
+  rotate: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M36 26a12 12 0 1 1-4-9.5"/><path d="M33 9v8h-8"/></svg>',
+  demolish: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M10 38V18h12v20"/><path d="M26 38V26h12v12"/><path d="M20 8l8 8M28 8l-8 8"/></svg>',
+  plan: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M9 11h26a4 4 0 0 1 4 4v22H13a4 4 0 0 1-4-4z"/><path d="M9 33a4 4 0 0 1 4-4h26"/><path d="M17 15v10M23 15v10M29 15v10M15 20h18"/></svg>',
+  hammer: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 14l9-5 13 8-4 6-8-4"/><path d="M22 19L11 39a3 3 0 0 0 5 3l11-19"/></svg>'
+};
 
 // ---------- Terrain ----------
 // heights is row-major: row i runs along z (from -size/2), column j along x.
@@ -1689,23 +1770,49 @@ const Builder = (function () {
   const TURN = { sq: 90, tri: 120 };
   const SOLID_FLOORS = new Set(["floor", "floor.triangle"]);
   const FULL_WALLS = new Set(["wall", "wall.doorway", "wall.window", "wall.frame"]);
-  // Building plan wheel: inner ring holds the everyday pieces, outer ring the rest.
-  const PLAN_INNER = ["foundation", "foundation.triangle", "wall", "wall.doorway", "wall.window", "floor", "floor.triangle", "block.stair.ushape", "roof", "roof.triangle"];
-  const PLAN_OUTER = ["foundation.steps", "wall.half", "wall.low", "wall.frame", "floor.frame", "floor.triangle.frame", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp"];
+  // Building plan wheel, clockwise from the top.
+  const PLAN = [
+    "foundation", "foundation.triangle", "foundation.steps", "floor", "floor.triangle", "floor.frame", "floor.triangle.frame",
+    "wall", "wall.doorway", "wall.window", "wall.frame", "wall.half", "wall.low",
+    "block.stair.ushape", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp", "roof", "roof.triangle"
+  ];
   const DEPLOYABLES = ["door.hinged.metal", "cupboard.tool.deployed", "box.wooden.large", "furnace", "sleepingbag_leather_deployed"];
-  const WHEEL_LABEL = {
-    "foundation": "Foundation", "foundation.triangle": "Triangle|Foundation", "foundation.steps": "Foundation|Steps",
-    "wall": "Wall", "wall.doorway": "Doorway", "wall.window": "Window", "wall.half": "Half Wall", "wall.low": "Low Wall", "wall.frame": "Wall Frame",
-    "floor": "Floor", "floor.triangle": "Triangle|Floor", "floor.frame": "Floor|Frame", "floor.triangle.frame": "Triangle|Floor Frame",
-    "block.stair.ushape": "U Stairs", "block.stair.lshape": "L Stairs", "block.stair.spiral": "Spiral|Stairs", "block.stair.spiral.triangle": "Triangle|Spiral", "ramp": "Ramp",
-    "roof": "Roof", "roof.triangle": "Triangle|Roof",
-    "door.hinged.metal": "Sheet Metal|Door", "cupboard.tool.deployed": "Tool|Cupboard", "box.wooden.large": "Large|Wood Box", "furnace": "Furnace", "sleepingbag_leather_deployed": "Sleeping|Bag"
+  const DESC = {
+    "foundation": "Every base starts here. Snaps edge to edge.",
+    "foundation.triangle": "Fills angles and builds honeycomb.",
+    "foundation.steps": "Steps up onto a foundation from outside.",
+    "floor": "Solid floor or ceiling on top of walls.",
+    "floor.triangle": "Triangle floor or ceiling.",
+    "floor.frame": "Takes a hatch or a grill.",
+    "floor.triangle.frame": "Triangle frame for a hatch or a grill.",
+    "wall": "Full-height wall.",
+    "wall.doorway": "Takes a door.",
+    "wall.window": "Takes window bars or an embrasure.",
+    "wall.frame": "Takes a double door or a garage door.",
+    "wall.half": "Half-height wall.",
+    "wall.low": "Low cover wall.",
+    "block.stair.ushape": "Two flights up to the next floor.",
+    "block.stair.lshape": "Turning stairs up to the next floor.",
+    "block.stair.spiral": "Compact stairs on a square.",
+    "block.stair.spiral.triangle": "Spiral stairs that fit a triangle.",
+    "ramp": "A slope instead of steps.",
+    "roof": "Sloped roof on top of walls.",
+    "roof.triangle": "Triangle roof for angled sections.",
+    "door.hinged.metal": "Closes off a doorway.",
+    "cupboard.tool.deployed": "Building privilege and upkeep.",
+    "box.wooden.large": "Storage for the loot room.",
+    "furnace": "Smelts ore.",
+    "sleepingbag_leather_deployed": "A place to respawn."
   };
   const HAMMER = [
-    { id: "wood", label: "Wood" }, { id: "stone", label: "Stone" }, { id: "metal", label: "Sheet|Metal" }, { id: "toptier", label: "Armored" },
-    { id: "rotate", label: "Rotate" }, { id: "demolish", label: "Demolish" }
+    { id: "wood", name: "Upgrade to Wood", desc: "Hit a piece to upgrade it to wood." },
+    { id: "stone", name: "Upgrade to Stone", desc: "Hit a piece to upgrade it to stone." },
+    { id: "metal", name: "Upgrade to Sheet Metal", desc: "Hit a piece to upgrade it to sheet metal." },
+    { id: "toptier", name: "Upgrade to Armored", desc: "Hit a piece to upgrade it to armored." },
+    { id: "rotate", name: "Rotate", desc: "Turn the piece you hit." },
+    { id: "demolish", name: "Demolish", desc: "Remove the piece you hit and anything it was holding up." }
   ];
-  const SLOTS = ["plan", "hammer", "deploy", "tape"];
+  const SLOTS = ["plan", "hammer", "deploy"];
   // Deployable footprints in metres (width along local x, depth along local z). Approximate; to be checked in-game.
   const FOOTPRINT = {
     "cupboard.tool.deployed": [0.96, 0.6],
@@ -2357,43 +2464,6 @@ const Builder = (function () {
     p.mesh.children.forEach(ch => { if (ch.isLineSegments) ch.material = m; });
   }
 
-  // ---------- Tape measure ----------
-  const tape = { a: null, b: null, group: null, line: null, dots: [] };
-  function initTape() {
-    tape.group = new THREE.Group();
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xd8b45f, depthTest: false, transparent: true });
-    tape.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat);
-    tape.line.renderOrder = 10;
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0xd8b45f, depthTest: false, transparent: true });
-    const dotGeo = new THREE.SphereGeometry(0.09, 12, 8);
-    tape.dots = [new THREE.Mesh(dotGeo, dotMat), new THREE.Mesh(dotGeo, dotMat)];
-    tape.dots.forEach(d => { d.renderOrder = 11; tape.group.add(d); });
-    tape.group.add(tape.line);
-    tape.group.visible = false;
-    scene.add(tape.group);
-  }
-  function tapePoint(sx, sy) {
-    const hit = pieceUnder(sx, sy);
-    if (hit) return hit.point.clone();
-    setRay(sx, sy);
-    const t = terrainMesh && ray.intersectObject(terrainMesh)[0];
-    return t ? t.point.clone() : null;
-  }
-  function drawTape(a, b) {
-    tape.group.visible = true;
-    tape.line.geometry.setFromPoints([a, b]);
-    tape.dots[0].position.copy(a);
-    tape.dots[1].position.copy(b);
-    const d = a.distanceTo(b), across = Math.hypot(b.x - a.x, b.z - a.z), up = b.y - a.y;
-    return d.toFixed(2) + " m  ·  across " + across.toFixed(2) + " m  ·  " + (up >= 0 ? "up " : "down ") + Math.abs(up).toFixed(2) + " m";
-  }
-  function tapeClick(sx, sy) {
-    const p = tapePoint(sx, sy);
-    if (!p) return flash("Point at the ground or a building piece");
-    if (!tape.a || tape.b) { tape.a = p; tape.b = null; drawTape(p, p); setHint("Click a second point to measure", false); }
-    else { tape.b = p; setHint(drawTape(tape.a, tape.b), false); }
-  }
-
   // ---------- Pointer ----------
   function local(clientX, clientY) {
     const r = canvas.getBoundingClientRect();
@@ -2403,12 +2473,6 @@ const Builder = (function () {
     if (!lastPointer) return;
     const [sx, sy] = lastPointer;
     clearHighlight();
-    if (ui.tool === "tape") {
-      hideGhost();
-      if (tape.a && !tape.b) { const p = tapePoint(sx, sy); if (p && !flashTimer) setHint(drawTape(tape.a, p), false); }
-      else if (!tape.a && !flashTimer) setHint("Click a point to start measuring", false);
-      return;
-    }
     if (ui.tool === "place") {
       const c = snap(sx, sy);
       if (!c) {
@@ -2431,7 +2495,6 @@ const Builder = (function () {
     }
   }
   function act() {
-    if (ui.tool === "tape") { tapeClick(lastPointer[0], lastPointer[1]); return; }
     if (!hover) return;
     if (ui.tool === "place") actPlace(hover.cand);
     else if (hover.piece) {
@@ -2444,18 +2507,17 @@ const Builder = (function () {
   }
 
   // ---------- Radial wheel (hold right-click, like Rust) ----------
-  const wheelEl = $("wheel"), wheelSvg = $("wheelSvg"), wheelName = $("wheelName"), wheelSub = $("wheelSub");
-  const W = { open: false, sticky: false, rings: [], hovered: null, cx: 0, cy: 0, scale: 1, openedAt: 0, start: null };
+  const wheelEl = $("wheel"), wheelSvg = $("wheelSvg"), wheelIcon = $("wheelIcon"), wheelName = $("wheelName"), wheelSub = $("wheelSub");
+  const W = { open: false, sticky: false, items: [], hovered: null, cx: 0, cy: 0, scale: 1, openedAt: 0, start: null, segs: [] };
   const SVGNS = "http://www.w3.org/2000/svg";
-  function wheelSpec() {
-    const item = id => ({ id, label: WHEEL_LABEL[id] || prefabName(id), full: prefabName(id) });
-    if (ui.slot === "plan") return { title: "Building Plan", rings: [{ r0: 64, r1: 152, items: PLAN_INNER.map(item) }, { r0: 156, r1: 236, items: PLAN_OUTER.map(item) }] };
-    if (ui.slot === "hammer") return {
-      title: "Hammer",
-      rings: [{ r0: 64, r1: 200, items: HAMMER.map(h => ({ id: h.id, label: h.label, full: GRADES[h.id] ? "Upgrade to " + GRADES[h.id].name : h.label, swatch: GRADES[h.id] ? GRADES[h.id].hex : null })) }]
-    };
-    if (ui.slot === "deploy") return { title: "Deployables", rings: [{ r0: 64, r1: 200, items: DEPLOYABLES.map(item) }] };
-    return null;
+  const R0 = 146, R1 = 206, POP = 16, ICON = 34;
+  function gradeIcon(g) {
+    return '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="9" width="30" height="30" rx="3" style="fill:' + GRADES[g].hex + '"/><path d="M9 19h30M9 29h30M19 9v10M29 19v10M19 29v10"/></svg>';
+  }
+  function wheelItems() {
+    if (ui.slot === "plan") return PLAN.map(id => ({ id, name: prefabName(id), desc: DESC[id], icon: isoIcon(id) }));
+    if (ui.slot === "hammer") return HAMMER.map(h => Object.assign({}, h, { icon: GRADES[h.id] ? gradeIcon(h.id) : GLYPHS[h.id] }));
+    return DEPLOYABLES.map(id => ({ id, name: prefabName(id), desc: DESC[id], icon: isoIcon(id) }));
   }
   const selectedId = () => (ui.slot === "plan" ? ui.plan : ui.slot === "hammer" ? ui.hammer : ui.deploy);
   function arcPath(r0, r1, a0, a1) {
@@ -2463,53 +2525,50 @@ const Builder = (function () {
     const large = a1 - a0 > 180 ? 1 : 0;
     return "M" + P(r1, a0) + " A" + r1 + " " + r1 + " 0 " + large + " 1 " + P(r1, a1) + " L" + P(r0, a1) + " A" + r0 + " " + r0 + " 0 " + large + " 0 " + P(r0, a0) + " Z";
   }
-  function renderWheel(spec) {
+  function renderWheel() {
     wheelSvg.innerHTML = "";
-    W.rings = spec.rings;
-    const sel = selectedId();
-    spec.rings.forEach(ring => {
-      const n = ring.items.length, step = 360 / n;
-      ring.items.forEach((it, i) => {
-        const mid = -90 + i * step;
-        const g = document.createElementNS(SVGNS, "g");
-        g.setAttribute("class", "wseg" + (it.id === sel ? " sel" : ""));
-        g.dataset.id = it.id;
-        const path = document.createElementNS(SVGNS, "path");
-        path.setAttribute("d", arcPath(ring.r0, ring.r1, mid - step / 2 + 0.7, mid + step / 2 - 0.7));
-        g.appendChild(path);
-        const rm = (ring.r0 + ring.r1) / 2;
-        const tx = rm * Math.cos(rad(mid)), ty = rm * Math.sin(rad(mid));
-        if (it.swatch) {
-          const sw = document.createElementNS(SVGNS, "rect");
-          sw.setAttribute("x", (tx - 7).toFixed(1)); sw.setAttribute("y", (ty - 24).toFixed(1));
-          sw.setAttribute("width", "14"); sw.setAttribute("height", "10"); sw.setAttribute("rx", "2");
-          sw.setAttribute("fill", it.swatch); sw.setAttribute("class", "wsw");
-          g.appendChild(sw);
-        }
-        const lines = it.label.split("|");
-        const text = document.createElementNS(SVGNS, "text");
-        text.setAttribute("x", tx.toFixed(1));
-        text.setAttribute("y", (ty - (lines.length - 1) * 6.5 + 4).toFixed(1));
-        lines.forEach((ln, k) => {
-          const ts = document.createElementNS(SVGNS, "tspan");
-          ts.setAttribute("x", tx.toFixed(1));
-          if (k) ts.setAttribute("dy", "13");
-          ts.textContent = ln;
-          text.appendChild(ts);
-        });
-        g.appendChild(text);
-        wheelSvg.appendChild(g);
-      });
+    W.items = wheelItems();
+    W.segs = [];
+    const n = W.items.length, step = 360 / n;
+    const ring = document.createElementNS(SVGNS, "circle");
+    ring.setAttribute("r", String((R0 + R1) / 2)); ring.setAttribute("class", "wring");
+    ring.setAttribute("stroke-width", String(R1 - R0));
+    wheelSvg.appendChild(ring);
+    W.items.forEach((it, i) => {
+      const mid = -90 + i * step;
+      const g = document.createElementNS(SVGNS, "g");
+      g.setAttribute("class", "wseg");
+      const path = document.createElementNS(SVGNS, "path");
+      path.setAttribute("d", arcPath(R0, R1, mid - step / 2, mid + step / 2));
+      g.appendChild(path);
+      const rm = (R0 + R1) / 2;
+      const holder = document.createElementNS(SVGNS, "g");
+      holder.setAttribute("transform", "translate(" + (rm * Math.cos(rad(mid)) - ICON / 2).toFixed(1) + " " + (rm * Math.sin(rad(mid)) - ICON / 2).toFixed(1) + ")");
+      holder.innerHTML = it.icon.replace("<svg ", '<svg width="' + ICON + '" height="' + ICON + '" ');
+      g.appendChild(holder);
+      wheelSvg.appendChild(g);
+      W.segs.push({ g, path, holder, mid, step });
     });
-    wheelName.textContent = spec.title;
-    wheelSub.textContent = "Release on a choice";
+    showWheelItem(W.items.find(it => it.id === selectedId()) || null, true);
+  }
+  // Highlight one segment: red, popped outward, with its details in the centre.
+  function showWheelItem(it, isCurrent) {
+    W.items.forEach((x, i) => {
+      const seg = W.segs[i], on = !!it && x.id === it.id;
+      seg.g.classList.toggle("hot", on);
+      seg.path.setAttribute("d", arcPath(R0, on ? R1 + POP : R1, seg.mid - seg.step / 2, seg.mid + seg.step / 2));
+      const rm = (R0 + R1 + (on ? POP : 0)) / 2;
+      seg.holder.setAttribute("transform", "translate(" + (rm * Math.cos(rad(seg.mid)) - ICON / 2).toFixed(1) + " " + (rm * Math.sin(rad(seg.mid)) - ICON / 2).toFixed(1) + ")");
+    });
+    wheelIcon.innerHTML = it ? it.icon : "";
+    wheelName.textContent = it ? it.name : "";
+    wheelSub.textContent = it ? it.desc : "";
+    wheelEl.classList.toggle("current", !!isCurrent);
   }
   function openWheel(sx, sy, sticky) {
-    const spec = wheelSpec();
-    if (!spec) return false;
-    renderWheel(spec);
+    renderWheel();
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
-    const outer = spec.rings[spec.rings.length - 1].r1 + 8;
+    const outer = R1 + POP + 6;
     W.scale = Math.min(1, (Math.min(vw, vh) - 16) / (outer * 2));
     const half = outer * W.scale;
     W.cx = Math.max(half + 4, Math.min(vw - half - 4, sx));
@@ -2523,20 +2582,18 @@ const Builder = (function () {
     return true;
   }
   function wheelHit(sx, sy) {
-    const dx = (sx - W.cx) / W.scale, dy = (sy - W.cy) / W.scale, d = Math.hypot(dx, dy);
-    if (d < W.rings[0].r0 - 6) return null;
-    let ring = W.rings.find(r => d < r.r1 + 2) || W.rings[W.rings.length - 1];
-    const n = ring.items.length, step = 360 / n;
+    const dx = (sx - W.cx) / W.scale, dy = (sy - W.cy) / W.scale;
+    if (Math.hypot(dx, dy) < 40) return null; // dead zone in the middle
+    const n = W.items.length, step = 360 / n;
     const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-    const idx = ((Math.round((ang + 90) / step) % n) + n) % n;
-    return ring.items[idx];
+    return W.items[((Math.round((ang + 90) / step) % n) + n) % n];
   }
   function wheelHover(sx, sy) {
     const it = wheelHit(sx, sy);
+    if (it === W.hovered) return;
     W.hovered = it;
-    wheelSvg.querySelectorAll(".wseg").forEach(g => g.classList.toggle("hot", !!it && g.dataset.id === it.id));
-    wheelName.textContent = it ? it.full : wheelSpec().title;
-    wheelSub.textContent = it ? (W.sticky ? "Click to select" : "Release to select") : (W.sticky ? "Click a choice" : "Release on a choice");
+    if (it) showWheelItem(it, false);
+    else showWheelItem(W.items.find(x => x.id === selectedId()) || null, true);
   }
   function closeWheel(choose) {
     if (!W.open) return;
@@ -2577,16 +2634,17 @@ const Builder = (function () {
   function hammerLabel() {
     return GRADES[ui.hammer] ? "Upgrade to " + GRADES[ui.hammer].name : ui.hammer === "rotate" ? "Rotate" : "Demolish";
   }
-  const SLOT_NAMES = { plan: "Building Plan", hammer: "Hammer", deploy: "Deployable", tape: "Tape Measure" };
+  const SLOT_NAMES = { plan: "Building Plan", hammer: "Hammer", deploy: "Deployable" };
   function updateHeader() {
     $("bKicker").textContent = SLOT_NAMES[ui.slot] + " · " + (LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1));
-    $("bLabel").textContent = ui.slot === "hammer" ? hammerLabel() : ui.slot === "tape" ? "Measure" : prefabName(ui.prefab);
+    $("bLabel").textContent = ui.slot === "hammer" ? hammerLabel() : prefabName(ui.prefab);
     $("lvlLabel").textContent = LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1);
     $("slotPlanSub").textContent = prefabName(ui.plan);
     $("slotHammerSub").textContent = hammerLabel();
     $("slotDeploySub").textContent = prefabName(ui.deploy);
+    $("slotDeployIcon").innerHTML = isoIcon(ui.deploy);
     document.querySelectorAll(".slot").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.slot === ui.slot)));
-    document.querySelectorAll("#palDeploy .pbtn").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.prefab === ui.deploy)));
+    document.querySelectorAll("#deployDock .dock-item").forEach(b => b.setAttribute("aria-pressed", String(ui.slot === "deploy" && b.dataset.prefab === ui.deploy)));
   }
   function updateStats() {
     let pieces = 0, deploy = 0;
@@ -2596,16 +2654,8 @@ const Builder = (function () {
       else deploy++;
     });
     const last = S.events[S.events.length - 1];
-    const dl = $("bStats");
-    dl.innerHTML = "";
-    [["Pieces", pieces], ["Items", deploy], ["Build", fmt(last ? last.t : 0)], ["Actions", S.events.length]].forEach(([k, v]) => {
-      const d = el("div");
-      d.append(el("dt", null, k), el("dd", null, String(v)));
-      dl.appendChild(d);
-    });
+    $("bStatsLine").textContent = pieces + " pieces · " + deploy + " items · " + fmt(last ? last.t : 0) + " build";
     fillGradeBar($("bGrades"), grades);
-    $("bClock").textContent = fmt(last ? last.t : 0);
-    $("bCount").textContent = (pieces + deploy) + " pieces · " + S.events.length + " actions";
     $("bUndo").disabled = !S.undo.length;
     $("bRedo").disabled = !S.redo.length;
   }
@@ -2623,10 +2673,8 @@ const Builder = (function () {
     else if (slot === "hammer") {
       if (GRADES[ui.hammer]) { ui.tool = "upgrade"; ui.grade = ui.hammer; }
       else ui.tool = ui.hammer;
-    } else ui.tool = "tape";
+    }
     if (ui.prefab !== prevPrefab) ui.rot = 0;
-    if (tape.group) tape.group.visible = slot === "tape" && !!tape.a;
-    if (slot === "tape") { tape.a = null; tape.b = null; if (tape.group) tape.group.visible = false; }
     updateHeader(); refreshVisibility(); updateHover();
   }
   function setLevel(L) {
@@ -2665,14 +2713,18 @@ const Builder = (function () {
 
   function buildPanels() {
     DEPLOYABLES.forEach(prefab => {
-      const b = el("button", "pbtn");
+      const b = el("button", "dock-item");
       b.type = "button";
       b.dataset.prefab = prefab;
+      b.title = prefabName(prefab);
       b.setAttribute("aria-pressed", "false");
-      b.appendChild(el("span", null, prefabName(prefab)));
+      const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(prefab);
+      b.append(ic, el("span", "dock-name", prefabName(prefab)));
       b.addEventListener("click", () => { ui.deploy = prefab; selectSlot("deploy"); });
-      $("palDeploy").appendChild(b);
+      $("deployDock").appendChild(b);
     });
+    $("slotPlanIcon").innerHTML = GLYPHS.plan;
+    $("slotHammerIcon").innerHTML = GLYPHS.hammer;
     GRADE_ORDER.forEach(g => {
       if (g === "twigs") return;
       const o = el("option", null, GRADES[g].name);
@@ -2684,7 +2736,7 @@ const Builder = (function () {
     // Hotbar: clicking a slot selects it; clicking the active slot opens its wheel (handy on touch screens).
     document.querySelectorAll(".slot").forEach(b => b.addEventListener("click", () => {
       const slot = b.dataset.slot;
-      if (slot === ui.slot && slot !== "tape") openWheel(viewport.clientWidth / 2, viewport.clientHeight / 2, true);
+      if (slot === ui.slot) openWheel(viewport.clientWidth / 2, viewport.clientHeight / 2, true);
       else selectSlot(slot);
     }));
     $("lvlDown").addEventListener("click", () => setLevel(ui.level - 1));
@@ -2733,6 +2785,7 @@ const Builder = (function () {
       closeWheel(true);
     });
     wheelEl.addEventListener("pointermove", e => { if (W.sticky) { const [sx, sy] = local(e.clientX, e.clientY); wheelHover(sx, sy); } });
+    $("bUpAllToggle").addEventListener("click", () => { const box = $("upAllBox"); box.hidden = !box.hidden; });
     viewport.addEventListener("contextmenu", e => e.preventDefault());
 
     document.addEventListener("keydown", e => {
@@ -2746,7 +2799,7 @@ const Builder = (function () {
       if (k === "r") { ui.rot++; updateHover(); }
       else if (k === "[" || e.key === "PageDown") setLevel(ui.level - 1);
       else if (k === "]" || e.key === "PageUp") setLevel(ui.level + 1);
-      else if (/^[1-4]$/.test(k)) selectSlot(SLOTS[Number(k) - 1]);
+      else if (/^[1-3]$/.test(k)) selectSlot(SLOTS[Number(k) - 1]);
     });
   }
 
@@ -2780,7 +2833,6 @@ const Builder = (function () {
     controls.maxDistance = 90;
     root = new THREE.Group();
     scene.add(root);
-    initTape();
 
     const saved = loadSaved();
     setTerrain(saved && saved.seed ? saved.seed : newSeed());
@@ -2820,7 +2872,7 @@ const Builder = (function () {
       if (!W.open || W.sticky || e.button !== 2) return;
       const [sx, sy] = local(e.clientX, e.clientY);
       const quick = performance.now() - W.openedAt < 400 && Math.hypot(sx - W.start[0], sy - W.start[1]) < 8;
-      if (quick && !W.hovered) { W.sticky = true; wheelSub.textContent = "Click a choice"; return; } // a quick right-click leaves it open
+      if (quick && !W.hovered) { W.sticky = true; return; } // a quick right-click leaves it open for clicking
       closeWheel(true);
     });
     canvas.addEventListener("pointerleave", () => { if (!W.open) { hideGhost(); clearHighlight(); hover = null; } });

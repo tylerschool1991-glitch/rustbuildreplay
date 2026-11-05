@@ -174,6 +174,74 @@ function makePiece(e, y0) {
   return { group, structural, level: levelOf(e.pos[1], y0), baseY: e.pos[1] };
 }
 
+// ---------- Line-art icons ----------
+// Draws a piece as a small isometric line drawing from its own model, painter-style, so hidden lines
+// are covered. Colours come from CSS (stroke: currentColor, fill: var(--icon-bg)).
+const ICON_PARTS = {
+  "foundation": [B(3, 1.4, 3, 0, 0.7, 0)],
+  "foundation.triangle": [SLAB(TRI, 1.4, 1.4)],
+  "foundation.steps": [B(3, 1.4, 3, 0, 0.7, -1.5), ...[0.75, 0.5, 0.25].map((top, k) => B(3, top * 1.4, 0.5, 0, top * 0.7, 0.25 + 0.5 * k))],
+  "floor": [B(3, 0.3, 3, 0, 0.15, 0)],
+  "floor.triangle": [SLAB(TRI, 0.3, 0.3)]
+};
+const iconCache = new Map();
+function isoIcon(prefab) {
+  if (iconCache.has(prefab)) return iconCache.get(prefab);
+  const view = [0.62, 0.7, 0.62];
+  const faces = [];
+  (ICON_PARTS[prefab] || partsFor(prefab)).forEach(pt => {
+    const r = (pt.ry || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+    const tr = (x, y, z) => [(pt.x || 0) + x * c + z * s, (pt.y || 0) + y, (pt.z || 0) - x * s + z * c];
+    let fs;
+    if (pt.poly) {
+      const n = pt.poly.length;
+      const top = pt.poly.map((v, i) => tr(v[0], pt.tops[i], v[1]));
+      const bot = pt.poly.map((v, i) => tr(v[0], pt.tops[i] - pt.t, v[1]));
+      fs = [top, bot];
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push([top[i], top[j], bot[j], bot[i]]); }
+    } else {
+      const hw = pt.w / 2, hh = pt.h / 2, hd = pt.d / 2;
+      const V = (a, b, d) => tr(a * hw, b * hh, d * hd);
+      fs = [
+        [V(-1, 1, -1), V(1, 1, -1), V(1, 1, 1), V(-1, 1, 1)], [V(-1, -1, -1), V(1, -1, -1), V(1, -1, 1), V(-1, -1, 1)],
+        [V(1, -1, -1), V(1, 1, -1), V(1, 1, 1), V(1, -1, 1)], [V(-1, -1, -1), V(-1, 1, -1), V(-1, 1, 1), V(-1, -1, 1)],
+        [V(-1, -1, 1), V(1, -1, 1), V(1, 1, 1), V(-1, 1, 1)], [V(-1, -1, -1), V(1, -1, -1), V(1, 1, -1), V(-1, 1, -1)]
+      ];
+    }
+    const all = [].concat(...fs);
+    const pc = [0, 1, 2].map(k => all.reduce((a, v) => a + v[k], 0) / all.length);
+    fs.forEach(f => {
+      // Newell normal, flipped to point away from the part's centre; keep faces turned toward the viewer.
+      let nx = 0, ny = 0, nz = 0;
+      for (let i = 0; i < f.length; i++) {
+        const a = f[i], b = f[(i + 1) % f.length];
+        nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1]);
+      }
+      const fc = [0, 1, 2].map(k => f.reduce((a, v) => a + v[k], 0) / f.length);
+      if (nx * (fc[0] - pc[0]) + ny * (fc[1] - pc[1]) + nz * (fc[2] - pc[2]) < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      if (nx * view[0] + ny * view[1] + nz * view[2] <= 1e-6) return;
+      faces.push({ pts: f, depth: fc[0] * view[0] + fc[1] * view[1] + fc[2] * view[2] });
+    });
+  });
+  faces.sort((a, b) => a.depth - b.depth);
+  const proj = v => [(v[0] - v[2]) * 0.866, -v[1] + (v[0] + v[2]) * 0.5];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  faces.forEach(f => f.pts.forEach(v => { const [x, y] = proj(v); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }));
+  const S = 48, pad = 5, k = (S - pad * 2) / Math.max(x1 - x0, y1 - y0, 0.01);
+  const ox = (S - (x1 - x0) * k) / 2, oy = (S - (y1 - y0) * k) / 2;
+  const polys = faces.map(f => '<polygon points="' + f.pts.map(v => { const [x, y] = proj(v); return ((x - x0) * k + ox).toFixed(1) + "," + ((y - y0) * k + oy).toFixed(1); }).join(" ") + '"/>').join("");
+  const svg = '<svg class="ic" viewBox="0 0 48 48" aria-hidden="true">' + polys + "</svg>";
+  iconCache.set(prefab, svg);
+  return svg;
+}
+// Hand-drawn glyphs for things that aren't pieces.
+const GLYPHS = {
+  rotate: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M36 26a12 12 0 1 1-4-9.5"/><path d="M33 9v8h-8"/></svg>',
+  demolish: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M10 38V18h12v20"/><path d="M26 38V26h12v12"/><path d="M20 8l8 8M28 8l-8 8"/></svg>',
+  plan: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M9 11h26a4 4 0 0 1 4 4v22H13a4 4 0 0 1-4-4z"/><path d="M9 33a4 4 0 0 1 4-4h26"/><path d="M17 15v10M23 15v10M29 15v10M15 20h18"/></svg>',
+  hammer: '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 14l9-5 13 8-4 6-8-4"/><path d="M22 19L11 39a3 3 0 0 0 5 3l11-19"/></svg>'
+};
+
 // ---------- Terrain ----------
 // heights is row-major: row i runs along z (from -size/2), column j along x.
 function makeTerrain(t) {
