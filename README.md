@@ -4,6 +4,7 @@ A web archive where Rust base builders showcase their bases as 3D replays: every
 
 ## What's here
 
+- **Sandbox** – build a base in the browser on Rust’s 3 m grid with its support rules (walls need foundations or floors, floors need walls, unsupported pieces collapse). Place, upgrade, rotate, demolish, undo; saved in your browser; one click to watch it as a replay.
 - **Archive** – gallery of bases with terrain filters (open ground, rock, cave, cliff) and group size.
 - **Base page** – the replay viewer: timeline scrubber, step forward/back, 1×–64× speed, clean replay (hides demolished mistakes), skip idle time, X-ray walls, see-through rock, floor cutaways, clickable build log.
 - **Terrain and formations** – heightmap terrain plus stand-in models for anvil rocks, cliffs and caves.
@@ -24,8 +25,9 @@ src/
     autoorder.js    finished base -> build log
     samples.js      example bases
     viewer.js       replay viewer
+    builder.js      sandbox builder (grid, snapping, support rules, undo)
     archive.js      gallery, thumbnails, filters
-    main.js         routing (#archive, #base-<slug>, #local) and file loading
+    main.js         routing (#archive, #build, #base-<slug>, #local) and file loading
 build.mjs           bundles src/ into dist/
 dist/
   index.html        deployable single-file site
@@ -65,12 +67,15 @@ Then open `dist/index.html` in a browser, or deploy the `dist/` folder to Netlif
 - `op`: `place`, `upgrade`, `rotate`, `remove`.
 - Grades: `twigs`, `wood`, `stone`, `metal`, `toptier`.
 - `terrain.heights` is row-major, `res × res`, rows along z starting at `-size/2`.
-- `setting`: `open`, `rock`, `cave`, `cliff`. `source`: `recorded`, `copypaste`.
+- `setting`: `open`, `rock`, `cave`, `cliff`. `source`: `recorded`, `copypaste`, `sandbox`.
 
 ## Roadmap
 
-1. ~~Oxide/Carbon plugin~~ – first version in `plugin/`; next: calibrate on a test server, capture rock/cave formations.
-2. Backend (Supabase): accounts via Discord/Steam, uploads, base pages, builder profiles.
-3. CopyPaste import on upload, with auto-ordering.
-4. More formation models, deployables and electrical.
-5. MP4 timelapse export for YouTube/TikTok.
+1. ~~Sandbox builder~~ – build on the 3 m grid with Rust support rules; every build becomes a replay.
+2. Walk mode: drop in a Rust-sized player to test doorways, stairs and crouch spots.
+3. Peek checker: highlight sightlines into the base from outside.
+4. Oxide/Carbon plugin (shelved, in `plugin/`) for importing real builds.
+5. Backend (Supabase): accounts via Discord/Steam, uploads, base pages, builder profiles.
+6. CopyPaste import on upload, with auto-ordering.
+7. More formation models, deployables and electrical.
+8. MP4 timelapse export for YouTube/TikTok.

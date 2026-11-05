@@ -181,6 +181,9 @@ const Viewer = (function () {
   }
 
   function fillInfo() {
+    const back = document.querySelector("#view-base .back");
+    back.href = log.source === "sandbox" ? "#build" : "#archive";
+    back.textContent = log.source === "sandbox" ? "← Back to the sandbox" : "← All bases";
     $("infoName").textContent = log.name || "Untitled base";
     const tags = $("infoTags");
     tags.innerHTML = "";

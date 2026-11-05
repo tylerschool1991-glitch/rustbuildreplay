@@ -10,7 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const read = p => fs.readFileSync(path.join(here, p), "utf8");
 
 // Order matters: later files use names declared in earlier ones.
-const ORDER = ["core", "world", "autoorder", "samples", "viewer", "archive", "main"];
+const ORDER = ["core", "world", "autoorder", "samples", "viewer", "builder", "archive", "main"];
 
 const css = read("src/styles.css");
 const js =

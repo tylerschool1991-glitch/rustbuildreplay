@@ -41,6 +41,10 @@ const SOURCES = {
     label: "Auto-ordered",
     note: "Imported from a CopyPaste save. The finished base is exact, but the build order was generated automatically and may not match how it was really built."
   },
+  sandbox: {
+    label: "Built in sandbox",
+    note: "Built in the BuildReplay sandbox on Rust's 3 m grid. Check the final design in the real game before relying on it."
+  },
   local: {
     label: "Your log",
     note: "Loaded from a file on this device. Nothing is uploaded."

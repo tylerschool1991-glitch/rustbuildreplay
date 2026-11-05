@@ -40,12 +40,17 @@ function readFile(file) {
     try { log = JSON.parse(fr.result); } catch (err) { setStatus("Couldn't read " + file.name + ": it isn't valid JSON.", true); return; }
     const problem = validate(log);
     if (problem) { setStatus("Couldn't load " + file.name + ": " + problem, true); return; }
-    localLog = normalizeLog(log, file.name.replace(/\.json$/i, ""));
-    localLog.slug = "local";
     setStatus("Loaded " + log.events.length + " events from " + file.name + ".");
-    if (location.hash === "#local") route(); else location.hash = "local";
+    openLocalLog(normalizeLog(log, file.name.replace(/\.json$/i, "")));
   };
   fr.readAsText(file);
+}
+
+// Shows a log that isn't in the archive (a loaded file or a sandbox build) on the base page.
+function openLocalLog(log) {
+  localLog = normalizeLog(log);
+  localLog.slug = "local";
+  if (location.hash === "#local") route(); else location.hash = "local";
 }
 
 function route() {
@@ -53,12 +58,14 @@ function route() {
   let target = null;
   if (h.indexOf("base-") === 0) target = SAMPLES.find(s => "base-" + s.slug === h) || null;
   else if (h === "local") target = localLog;
-  const showBase = !!target;
-  document.documentElement.dataset.mode = showBase ? "base" : "archive";
-  $("view-archive").hidden = showBase;
-  $("view-base").hidden = !showBase;
-  Viewer.setActive(showBase);
-  if (showBase) Viewer.open(target);
+  const view = target ? "base" : h === "build" ? "build" : "archive";
+  document.documentElement.dataset.mode = view === "archive" ? "archive" : "base";
+  $("view-archive").hidden = view !== "archive";
+  $("view-base").hidden = view !== "base";
+  $("view-build").hidden = view !== "build";
+  Viewer.setActive(view === "base");
+  Builder.setActive(view === "build");
+  if (target) Viewer.open(target);
   window.scrollTo(0, 0);
 }
 

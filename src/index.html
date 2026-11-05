@@ -13,6 +13,7 @@
     <div class="top-actions">
       <span class="status" id="status" role="status"></span>
       <a class="btn" href="#archive">Archive</a>
+      <a class="btn" href="#build">Sandbox</a>
       <button class="btn primary" id="loadBtn" type="button">Load build log</button>
       <input type="file" id="fileInput" accept=".json,application/json" hidden>
     </div>
@@ -22,7 +23,11 @@
   <section class="archive" id="view-archive" aria-labelledby="archiveTitle">
     <div class="arch-head">
       <h1 class="arch-title" id="archiveTitle">Base archive</h1>
-      <p class="arch-lede">Watch Rust bases go up piece by piece, from the first twig foundation to the last armored door. Orbit around them, step through every placement and peel back floors to see the layout. The bases below are examples while the archive is being built.</p>
+      <p class="arch-lede">Design Rust bases in the browser on the real 3 m grid, then watch them go up piece by piece, from the first twig foundation to the last armored door. The bases below are examples while the archive is being built.</p>
+      <div class="arch-cta">
+        <a class="btn primary" href="#build">Open the sandbox</a>
+        <span>Build, upgrade and demolish with Rust's support rules. Every build turns into a replay.</span>
+      </div>
     </div>
     <div class="filters">
       <div class="chips" id="settingChips" role="group" aria-label="Filter by terrain">
@@ -65,6 +70,78 @@
       <p>Grades: twigs, wood, stone, metal, toptier. Prefabs: foundation, wall, wall.doorway, wall.window, wall.half, wall.low, wall.frame, floor, floor.frame, block.stair.ushape, door.hinged.metal, cupboard.tool.deployed, box.wooden.large, furnace, sleepingbag_leather_deployed. Formations: rock.anvil, rock.cliff, cave.small. Unknown prefabs show as grey blocks.</p>
     </details>
   </section>
+
+  <!-- Sandbox -->
+  <main class="workspace" id="view-build" hidden>
+    <section class="stage" aria-label="Sandbox build area">
+      <div class="viewport" id="bviewport">
+        <canvas id="bcanvas" aria-label="3D build area. Click to place, drag to orbit, scroll to zoom."></canvas>
+        <div class="now">
+          <div class="now-card">
+            <div class="now-kicker" id="bKicker">Place · Ground floor</div>
+            <div class="now-label" id="bLabel">Foundation</div>
+            <div class="now-sub" id="bHint">Click the ground to place a foundation</div>
+          </div>
+          <div class="now-card clock">
+            <div class="small">BUILD CLOCK</div>
+            <div class="big" id="bClock">00:00</div>
+            <div class="small" id="bCount">0 pieces</div>
+          </div>
+        </div>
+        <div class="hint">Click to place · Drag to orbit · Right-drag to pan · R rotate · [ ] change floor · Ctrl+Z undo</div>
+      </div>
+      <div class="transport">
+        <div class="seg tools" id="toolSeg" role="group" aria-label="Tool">
+          <button type="button" data-tool="place" aria-pressed="true" title="Place (P)">Place</button>
+          <button type="button" data-tool="upgrade" aria-pressed="false" title="Upgrade (U)">Upgrade</button>
+          <button type="button" data-tool="rotate" aria-pressed="false" title="Rotate (O)">Rotate</button>
+          <button type="button" data-tool="demolish" aria-pressed="false" title="Demolish (X)">Demolish</button>
+        </div>
+        <div class="lvl" role="group" aria-label="Floor you're building on">
+          <button class="tbtn" id="lvlDown" type="button" aria-label="Floor down" title="Floor down ([)">−</button>
+          <span id="lvlLabel">Ground floor</span>
+          <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
+        </div>
+        <span class="spacer"></span>
+        <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
+          <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
+        </button>
+        <button class="tbtn" id="bRedo" type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">
+          <svg viewBox="0 0 16 16"><path d="M10 3l4 4-4 4V8.5H6a2.5 2.5 0 0 0 0 5h2V15H6a4 4 0 0 1 0-8h4z"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="card">
+        <label class="field-label" for="bName">Base name</label>
+        <input class="field" id="bName" type="text" placeholder="Name your base" maxlength="60" autocomplete="off">
+        <dl class="info-stats" id="bStats"></dl>
+        <div class="gbar" id="bGrades"></div>
+        <div class="info-actions">
+          <button class="btn primary" id="bReplay" type="button">Watch replay</button>
+          <button class="btn" id="bCopy" type="button">Copy log</button>
+          <button class="btn" id="bClear" type="button">New build</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Building <small>keys 1–0</small></h2>
+        <div class="palette" id="palBuild"></div>
+        <h2>Deployables</h2>
+        <div class="palette" id="palDeploy"></div>
+      </div>
+
+      <div class="card">
+        <h2>Grade</h2>
+        <div class="palette" id="gradePick"></div>
+        <button class="btn" id="bUpAll" type="button">Upgrade everything to Stone</button>
+        <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above the one I'm on</label>
+      </div>
+
+      <p class="note">Pieces snap to Rust's 3 m building grid and follow its support rules: walls need a foundation or floor, floors need walls, and anything left unsupported collapses. Deployable sizes are close approximations still being checked against the game. Walk mode and the peek checker are next. Your build is saved in this browser.</p>
+    </aside>
+  </main>
 
   <!-- Base page -->
   <main class="workspace" id="view-base" hidden>
