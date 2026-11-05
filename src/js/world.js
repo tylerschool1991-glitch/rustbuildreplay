@@ -18,7 +18,9 @@ const DMATS = {
   catItems: solidMat("#7d5a36"),
   catElectrical: solidMat("#8a7a3c"),
   catTraps: solidMat("#7a3f35"),
-  catFun: solidMat("#5e4f72")
+  catFun: solidMat("#5e4f72"),
+  catSiege: solidMat("#6b5a44"),
+  catMisc: solidMat("#4f6466")
 };
 const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x141713, transparent: true, opacity: 0.55 });
 const ROCK_MAT = new THREE.MeshStandardMaterial({ color: lin("#7a766c"), roughness: 1, flatShading: true, side: THREE.DoubleSide });
@@ -57,9 +59,12 @@ const SQUARE = [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]];
 // A wall with an opening, as one extruded piece. outline/holes are [x, y] points in the wall's plane.
 const WALLX = (outline, holes, d) => ({ outline, holes: holes || [], d: d || 0.25 });
 const rectPts = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-// Openings (estimates until measured): doorway 1.2 × 2.2, window 1.0 × 0.9 from 1.2 m up, wall frame 2.4 × 2.7.
+// Wall openings sized to the measured items that fit them: doors 1.2 × 2.2, double doors and frame
+// items 2.7 × 2.85, window bars 2.21 × 1.27. The window's height in the wall isn't measured yet, so it
+// is centred for now.
+const WINDOW_W = 2.21, WINDOW_H = 1.27, WINDOW_BOTTOM = (3 - 1.27) / 2;
 const DOORWAY_OUTLINE = [[-1.5, 0], [-0.6, 0], [-0.6, 2.2], [0.6, 2.2], [0.6, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
-const FRAME_OUTLINE = [[-1.5, 0], [-1.2, 0], [-1.2, 2.7], [1.2, 2.7], [1.2, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
+const FRAME_OUTLINE = [[-1.5, 0], [-1.35, 0], [-1.35, 2.85], [1.35, 2.85], [1.35, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
 
 // A straight flight of solid steps. Runs along +z from z0 (or -z when dir is -1), centred on x.
 function flight(x, width, z0, dir, run, count, base, rise) {
@@ -85,8 +90,8 @@ function spiralTreads(r0, r1, count, sweep, rise, post) {
 function triFrameBars(y, h) {
   const inr = TRI_R / 2;
   return [90, 210, 330].map(a => {
-    const r = a * Math.PI / 180, d = inr - 0.15;
-    return B(2.3, h, 0.3, Math.cos(r) * d, y, Math.sin(r) * d, undefined, 90 - a);
+    const r = a * Math.PI / 180, d = inr - 0.075;
+    return B(2.75, h, 0.15, Math.cos(r) * d, y, Math.sin(r) * d, undefined, 90 - a);
   });
 }
 function partsFor(prefab) {
@@ -100,13 +105,13 @@ function partsFor(prefab) {
     }
     case "wall": return [B(3, 3, 0.25, 0, 1.5, 0)];
     case "wall.doorway": return [WALLX(DOORWAY_OUTLINE)];
-    case "wall.window": return [WALLX(rectPts(-1.5, 0, 1.5, 3), [rectPts(-0.5, 1.2, 0.5, 2.1)])];
+    case "wall.window": return [WALLX(rectPts(-1.5, 0, 1.5, 3), [rectPts(-WINDOW_W / 2, WINDOW_BOTTOM, WINDOW_W / 2, WINDOW_BOTTOM + WINDOW_H)])];
     case "wall.half": return [B(3, 1.5, 0.25, 0, 0.75, 0)];
     case "wall.low": return [B(3, 1, 0.25, 0, 0.5, 0)];
     case "wall.frame": return [WALLX(FRAME_OUTLINE)];
     case "floor": return [B(3, 0.2, 3, 0, -0.1, 0)];
     case "floor.triangle": return [SLAB(TRI, 0, 0.2)];
-    case "floor.frame": return [B(3, 0.2, 0.3, 0, -0.1, -1.35), B(3, 0.2, 0.3, 0, -0.1, 1.35), B(0.3, 0.2, 2.4, -1.35, -0.1, 0), B(0.3, 0.2, 2.4, 1.35, -0.1, 0)];
+    case "floor.frame": return [B(3, 0.2, 0.15, 0, -0.1, -1.425), B(3, 0.2, 0.15, 0, -0.1, 1.425), B(0.15, 0.2, 2.7, -1.425, -0.1, 0), B(0.15, 0.2, 2.7, 1.425, -0.1, 0)];
     case "floor.triangle.frame": return triFrameBars(-0.1, 0.2);
     // Roofs: a sloped slab rising toward local +z (square) or toward the far corner (triangle). Shapes are approximate.
     case "roof": return [SLAB(SQUARE, [0.25, 0.25, 1.75, 1.75], 0.25)];
@@ -127,14 +132,14 @@ function partsFor(prefab) {
     case "block.stair.spiral.triangle": return spiralTreads(0.1, 0.8, 14, 330, 3, 0.2);
     case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
     default: {
-      // Deployables: a generic block with the item's footprint and height, positioned by how it mounts.
+      // Deployables: their measured collision boxes (or bounds), placed by how the item mounts.
       const c = CATALOG_BY_ID[prefab];
       if (!c) return [B(0.8, 0.8, 0.8, 0, 0.4, 0, "generic")];
       const m = "cat" + c.cat;
-      if (c.place === "doorway" || c.place === "frame") return [B(c.w, c.h, c.d, 0, c.h / 2 + 0.01, 0, m)];
-      if (c.place === "window") return [B(c.w, c.h, c.d, 0, 1.65, 0, m)];
-      if (c.place === "hatch" || c.place === "hatch.tri") return [B(c.w, c.h, c.d, 0, -c.h / 2, 0, m)];
-      return [B(c.w, c.h, c.d, 0, c.h / 2, 0, m)];
+      if (c.place === "hatch.tri") return [SLAB(TRI.map(([x, z]) => [x * 0.86, z * 0.86]), 0.05, 0.12, m)];
+      const lift = c.place === "window" ? WINDOW_BOTTOM : 0;
+      const boxes = c.cols && c.cols.length ? c.cols : [c.b];
+      return boxes.map(([x, y, z, w, h, d]) => B(w, h, d, x, y + lift, z, m));
     }
   }
 }

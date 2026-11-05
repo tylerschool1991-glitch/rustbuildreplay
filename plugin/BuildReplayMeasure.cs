@@ -10,7 +10,7 @@ namespace Oxide.Plugins
     // Run `brmeasure` in the server console. It reads (without spawning anything into the world) the exact
     // bounds and collision boxes of every deployable item and every building-core prefab, and writes them to
     // oxide/data/BuildReplay/measurements.json (carbon/data/... on Carbon). Send that file back to be imported.
-    [Info("BuildReplayMeasure", "BuildReplay", "0.1.0")]
+    [Info("BuildReplayMeasure", "BuildReplay", "0.2.0")]
     [Description("Dumps exact sizes of deployables and building pieces for the BuildReplay sandbox.")]
     public class BuildReplayMeasure : RustPlugin
     {
@@ -41,6 +41,8 @@ namespace Oxide.Plugins
             public string rustVersion;
             public List<Entry> deployables = new List<Entry>();
             public List<Entry> building = new List<Entry>();
+            public List<Entry> player = new List<Entry>();
+            public List<string> searched = new List<string>();
             public List<string> errors = new List<string>();
         }
 
@@ -79,22 +81,38 @@ namespace Oxide.Plugins
                 catch (Exception ex) { output.errors.Add(def.shortname + ": " + ex.Message); }
             }
 
-            foreach (var path in GameManifest.Current.entities)
+            // Building pieces aren't items, so find their prefab paths in the game's string pool
+            // (every prefab path is registered there), falling back to the manifest's entity list.
+            var paths = new HashSet<string>();
+            try { foreach (var str in StringPool.toString.Values) paths.Add(str); output.searched.Add("StringPool"); }
+            catch (Exception ex) { output.errors.Add("StringPool: " + ex.Message); }
+            try { foreach (var str in GameManifest.Current.entities) paths.Add(str); output.searched.Add("GameManifest.entities"); }
+            catch (Exception ex) { output.errors.Add("GameManifest: " + ex.Message); }
+
+            foreach (var path in paths)
             {
-                if (path == null || !path.Contains("/building core/") || !path.EndsWith(".prefab") || seenPaths.Contains(path)) continue;
+                if (path == null || seenPaths.Contains(path)) continue;
+                var lower = path.ToLowerInvariant();
+                if (!lower.EndsWith(".prefab")) continue;
+                var isBuilding = lower.Contains("/building core/");
+                var isPlayer = lower == "assets/prefabs/player/player.prefab";
+                if (!isBuilding && !isPlayer) continue;
                 try
                 {
                     var go = GameManager.server.FindPrefab(path);
-                    if (go == null) continue;
+                    if (go == null) { output.errors.Add("No prefab for " + path); continue; }
                     var entry = Measure(go, path);
+                    if (isPlayer) { output.player.Add(entry); continue; }
+                    if (go.GetComponent<BuildingBlock>() == null) continue; // skins and helpers, not pieces
                     entry.gradeColliders = MeasureGrades(go, output.errors);
                     output.building.Add(entry);
+                    seenPaths.Add(path);
                 }
                 catch (Exception ex) { output.errors.Add(path + ": " + ex.Message); }
             }
 
             Interface.Oxide.DataFileSystem.WriteObject("BuildReplay/measurements", output);
-            arg.ReplyWith($"BuildReplay: measured {output.deployables.Count} deployables and {output.building.Count} building pieces " +
+            arg.ReplyWith($"BuildReplay: measured {output.deployables.Count} deployables, {output.building.Count} building pieces and {output.player.Count} player model " +
                           $"({output.errors.Count} errors). Saved to data/BuildReplay/measurements.json");
         }
 

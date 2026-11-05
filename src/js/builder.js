@@ -50,9 +50,9 @@ const Builder = (function () {
     "sleepingbag_leather_deployed": "A place to respawn."
   };
   function describe(id) {
-    if (DESC[id]) return DESC[id];
     const c = CATALOG_BY_ID[id];
-    return c ? c.w + " × " + c.d + " × " + c.h + " m (estimate until measured)" : "";
+    if (!c) return DESC[id] || "";
+    return (DESC[id] ? DESC[id] + " " : "") + sizeText(c) + " (measured)";
   }
   const HAMMER = [
     { id: "wood", name: "Upgrade to Wood", desc: "Hit a piece to upgrade it to wood." },
@@ -266,8 +266,15 @@ const Builder = (function () {
       case "F": case "FL": case "RF": case "S": case "H": return shapeVerts(p.shape, p.cx, p.cz, p.theta);
       case "W": case "D": return rectPoly(p.mx, p.mz, 3, 0.25, wallRot(p.a));
       case "FS": return rectPoly(p.mx + p.nx * 0.75, p.mz + p.nz * 0.75, 3, 1.5, wallRot(p.a));
-      default: { const c = CATALOG_BY_ID[p.prefab] || { w: 0.8, d: 0.8 }; return rectPoly(p.x, p.z, c.w, c.d, p.rot); }
+      default: return footRect(p.prefab, p.x, p.z, p.rot);
     }
+  }
+  // An item's footprint on the ground: its measured bounds, offset from its origin and turned with it.
+  function footRect(prefab, x, z, rot) {
+    const c = CATALOG_BY_ID[prefab];
+    if (!c) return rectPoly(x, z, 0.8, 0.8, rot);
+    const ox = c.b[0], oz = c.b[2], cs = cosd(rot), sn = sind(rot);
+    return rectPoly(x + ox * cs + oz * sn, z - ox * sn + oz * cs, c.w, c.d, rot);
   }
   function overlapsAny(poly, filter, inset) {
     const s = inset === undefined ? 0.12 : inset;
@@ -469,8 +476,7 @@ const Builder = (function () {
         const t = ray.intersectObject(terrainMesh)[0];
         if (t) {
           const x = Math.round(t.point.x * 4) / 4, z = Math.round(t.point.z * 4) / 4;
-          const cat = CATALOG_BY_ID[prefab] || { w: 0.8, d: 0.8 };
-          const g = groundUnder(rectPoly(x, z, cat.w, cat.d, rot));
+          const g = groundUnder(footRect(prefab, x, z, rot));
           c = { L: 0, by: R2(g.max - 1), x, z, rot, ground: true };
         }
       }
@@ -1014,11 +1020,11 @@ const Builder = (function () {
       const b = el("button", "dock-item");
       b.type = "button";
       b.dataset.prefab = c.id;
-      b.title = c.name + " · " + c.w + " × " + c.d + " × " + c.h + " m (estimate)";
+      b.title = c.name + " · " + sizeText(c) + " (measured)";
       b.setAttribute("aria-pressed", String(ui.slot === "deploy" && c.id === ui.deploy));
       const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(c.id);
       const txt = el("span", "dock-text");
-      txt.append(el("span", "dock-name", c.name), el("span", "dock-meta", (term ? c.cat + " · " : "") + MOUNT[c.place]));
+      txt.append(el("span", "dock-name", c.name), el("span", "dock-meta", (term ? c.cat + " · " : "") + MOUNT[c.place] + " · " + sizeText(c)));
       b.append(ic, txt);
       b.addEventListener("click", () => { pickDeployable(c.id); selectSlot("deploy"); });
       list.appendChild(b);
