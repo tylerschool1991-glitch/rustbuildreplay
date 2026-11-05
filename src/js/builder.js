@@ -65,7 +65,8 @@ const Builder = (function () {
   const SLOTS = ["plan", "hammer"];
   const STORE_KEY = "buildreplay.sandbox.v3";
   const MAX_LEVEL = 5;
-  const FOUNDATION_DEPTH = 4; // the foundation model reaches 4 m below its top
+  const FOUNDATION_DEPTH = FOUNDATION_DEPTH_M; // measured: a foundation reaches 3 m below its top
+  const SPIRALS = new Set(["block.stair.spiral", "block.stair.spiral.triangle"]);
   const SNAP_PX = 85;         // how close (in screen pixels) the pointer must be to a snap point
   const REASON = {
     FS: "Foundation steps go on the outer edge of a foundation",
@@ -244,7 +245,7 @@ const Builder = (function () {
   function keyOf(p) {
     switch (p.kind) {
       case "F": case "FL": case "RF": return fpKey(p.cx, p.cz, Hof(p));
-      case "S": return "S" + fpKey(p.cx, p.cz, Hof(p));
+      case "S": return "S" + fpKey(p.cx, p.cz, Hof(p)) + ":" + (p.half || 0);
       case "W": return edgeKey(p, Hof(p));
       case "D": return "D" + edgeKey(p, Hof(p));
       case "H": return "H" + fpKey(p.cx, p.cz, Hof(p));
@@ -255,10 +256,11 @@ const Builder = (function () {
   function posOf(p) {
     switch (p.kind) {
       case "F": return [p.cx, p.by, p.cz];
-      case "FL": case "RF": case "S": case "H": return [p.cx, Hof(p), p.cz];
+      case "S": return [p.cx, Hof(p) + SPIRAL_RISE * (p.half || 0), p.cz];
+      case "FL": case "RF": case "H": return [p.cx, Hof(p), p.cz];
       case "W": case "D": return [p.mx, Hof(p), p.mz];
       case "FS": return [p.mx, p.by, p.mz];
-      default: return [p.x, Hof(p), p.z];
+      default: return [p.x, Hof(p) + (!p.ground && p.L > 0 ? FLOOR_T / 2 : 0), p.z]; // floors' top is 0.1 m above the storey line
     }
   }
   function polyOf(p) {
@@ -305,7 +307,10 @@ const Builder = (function () {
       case "FS": return surfaceHasEdge(edgeKey(p, H));
       case "W": return surfaceHasEdge(edgeKey(p, H)) || (p.L > 0 && fullWallAt(p, H - 3));
       case "FL": case "RF": return edgesOf(p).some(e => fullWallAt(e, H - 3));
-      case "S": { const s = get(fpKey(p.cx, p.cz, H)); return isSolidSurface(s) && s.shape === p.shape; }
+      case "S": {
+        if (p.half) { const below = get("S" + fpKey(p.cx, p.cz, H) + ":0"); return !!(below && below.prefab === p.prefab); }
+        const s = get(fpKey(p.cx, p.cz, H)); return isSolidSurface(s) && s.shape === p.shape;
+      }
       case "D": { const w = get(edgeKey(p, H)); return !!(w && w.prefab === SOCKET_WALL[placeOf(p.prefab)]); }
       case "H": { const f = get(fpKey(p.cx, p.cz, H)); return !!(f && f.prefab === (p.shape === "tri" ? "floor.triangle.frame" : "floor.frame")); }
       default: return p.ground ? true : deployOk(p);
@@ -435,10 +440,15 @@ const Builder = (function () {
       }
     } else if (kind === "S") {
       const L = ui.level;
-      const opts = all().filter(s => isSolidSurface(s) && s.L === L && s.shape === shape && !S.sock.has("S" + fpKey(s.cx, s.cz, Hof(s))))
-        .map(s => ({ cx: s.cx, cz: s.cz, theta: s.theta, by: s.by, ref: [s.cx, Hof(s), s.cz] }));
+      const opts = all().filter(s => isSolidSurface(s) && s.L === L && s.shape === shape && !all().some(o => o.kind === "S" && o.L === L && sameH(Hof(o), Hof(s)) && Math.hypot(o.cx - s.cx, o.cz - s.cz) < 0.1))
+        .map(s => ({ cx: s.cx, cz: s.cz, theta: s.theta, by: s.by, half: 0, ref: [s.cx, Hof(s), s.cz] }));
+      // A spiral stair can take a second spiral on top to climb the rest of the storey.
+      if (SPIRALS.has(prefab)) all().forEach(o => {
+        if (o.prefab === prefab && o.L === L && !o.half && !S.sock.has("S" + fpKey(o.cx, o.cz, Hof(o)) + ":1"))
+          opts.push({ cx: o.cx, cz: o.cz, theta: o.theta, by: o.by, half: 1, ref: [o.cx, Hof(o) + SPIRAL_RISE, o.cz] });
+      });
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
-      if (best) c = { shape, L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: norm(-(best.theta + ui.rot * TURN[shape])) };
+      if (best) c = { shape, L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, half: best.half, rot: norm(-(best.theta + ui.rot * TURN[shape]) + (best.half ? 180 : 0)) };
     } else if (kind === "W") {
       const L = ui.level, seen = new Set(), opts = [];
       const add = (e, by) => {
@@ -461,7 +471,7 @@ const Builder = (function () {
       if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(best.rot + (ui.rot % 2 ? 180 : 0)) };
     } else if (kind === "H") {
       const frameType = placeOf(prefab) === "hatch.tri" ? "floor.triangle.frame" : "floor.frame";
-      const opts = all().filter(o => o.prefab === frameType && o.mesh.visible)
+      const opts = all().filter(o => o.prefab === frameType && (o.L === ui.level || o.L === ui.level + 1))
         .map(o => ({ shape: o.shape, L: o.L, by: o.by, cx: o.cx, cz: o.cz, theta: o.theta, rot: o.rot, ref: [o.cx, Hof(o), o.cz] }));
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { shape: best.shape, L: best.L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: best.rot };
@@ -701,7 +711,7 @@ const Builder = (function () {
   // ---------- Visibility, ghost, highlight ----------
   function refreshVisibility() {
     const k = kindOf(ui.prefab);
-    const placingCeiling = ui.tool === "place" && (k === "FL" || k === "RF");
+    const placingCeiling = ui.tool === "place" && (k === "FL" || k === "RF" || k === "H");
     all().forEach(p => {
       let v = true;
       if (ui.hideAbove) v = p.L <= ui.level || (placingCeiling && (p.kind === "FL" || p.kind === "RF") && p.L === ui.level + 1);

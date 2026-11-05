@@ -57,14 +57,18 @@ const TRI = [[0, -TRI_R], [1.5, TRI_R / 2], [-1.5, TRI_R / 2]];
 const SQUARE = [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]];
 
 // A wall with an opening, as one extruded piece. outline/holes are [x, y] points in the wall's plane.
-const WALLX = (outline, holes, d) => ({ outline, holes: holes || [], d: d || 0.25 });
+const WALLX = (outline, holes, d) => ({ outline, holes: holes || [], d: d || WALL_T });
 const rectPts = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+// Measured from the game (data/measurements.json): walls 0.2 m thick; foundations reach 3 m below their top;
+// floors are 0.2 m thick, centred on the storey line, so every storey is exactly 3 m; spiral stairs rise 1.5 m.
+const WALL_T = 0.2, FOUNDATION_DEPTH_M = 3, FLOOR_T = 0.2, SPIRAL_RISE = 1.5;
 // Wall openings sized to the measured items that fit them: doors 1.2 × 2.2, double doors and frame
 // items 2.7 × 2.85, window bars 2.21 × 1.27. The window's height in the wall isn't measured yet, so it
 // is centred for now.
 const WINDOW_W = 2.21, WINDOW_H = 1.27, WINDOW_BOTTOM = (3 - 1.27) / 2;
 const DOORWAY_OUTLINE = [[-1.5, 0], [-0.6, 0], [-0.6, 2.2], [0.6, 2.2], [0.6, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
-const FRAME_OUTLINE = [[-1.5, 0], [-1.35, 0], [-1.35, 2.85], [1.35, 2.85], [1.35, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
+// Wall frame: measured 0.2 m posts centred 1.42 m out and a 0.2 m top beam at 2.91 m, leaving 2.64 × 2.81.
+const FRAME_OUTLINE = [[-1.5, 0], [-1.32, 0], [-1.32, 2.81], [1.32, 2.81], [1.32, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
 
 // A straight flight of solid steps. Runs along +z from z0 (or -z when dir is -1), centred on x.
 function flight(x, width, z0, dir, run, count, base, rise) {
@@ -90,29 +94,30 @@ function spiralTreads(r0, r1, count, sweep, rise, post) {
 function triFrameBars(y, h) {
   const inr = TRI_R / 2;
   return [90, 210, 330].map(a => {
-    const r = a * Math.PI / 180, d = inr - 0.075;
-    return B(2.75, h, 0.15, Math.cos(r) * d, y, Math.sin(r) * d, undefined, 90 - a);
+    const r = a * Math.PI / 180, d = inr - 0.1;
+    return B(2.7, h, 0.2, Math.cos(r) * d, y, Math.sin(r) * d, undefined, 90 - a);
   });
 }
 function partsFor(prefab) {
   switch (prefab) {
     // Foundations extend 3 m below their top-minus-1 so they read as sunk into slopes.
-    case "foundation": return [B(3, 4, 3, 0, -1, 0)];
-    case "foundation.triangle": return [SLAB(TRI, 1, 4)];
+    case "foundation": return [B(3, FOUNDATION_DEPTH_M, 3, 0, 1 - FOUNDATION_DEPTH_M / 2, 0)];
+    case "foundation.triangle": return [SLAB(TRI, 1, FOUNDATION_DEPTH_M)];
     case "foundation.steps": {
       // Attached to a foundation edge; steps lead outward along local +z.
       return [0.75, 0.5, 0.25].map((top, k) => B(3, top + 1, 0.5, 0, (top - 1) / 2, 0.25 + 0.5 * k));
     }
-    case "wall": return [B(3, 3, 0.25, 0, 1.5, 0)];
+    case "wall": return [B(3, 3, WALL_T, 0, 1.5, 0)];
     case "wall.doorway": return [WALLX(DOORWAY_OUTLINE)];
     case "wall.window": return [WALLX(rectPts(-1.5, 0, 1.5, 3), [rectPts(-WINDOW_W / 2, WINDOW_BOTTOM, WINDOW_W / 2, WINDOW_BOTTOM + WINDOW_H)])];
-    case "wall.half": return [B(3, 1.5, 0.25, 0, 0.75, 0)];
-    case "wall.low": return [B(3, 1, 0.25, 0, 0.5, 0)];
+    case "wall.half": return [B(3, 1.5, WALL_T, 0, 0.75, 0)];
+    case "wall.low": return [B(3, 1, WALL_T, 0, 0.5, 0)];
     case "wall.frame": return [WALLX(FRAME_OUTLINE)];
-    case "floor": return [B(3, 0.2, 3, 0, -0.1, 0)];
-    case "floor.triangle": return [SLAB(TRI, 0, 0.2)];
-    case "floor.frame": return [B(3, 0.2, 0.15, 0, -0.1, -1.425), B(3, 0.2, 0.15, 0, -0.1, 1.425), B(0.15, 0.2, 2.7, -1.425, -0.1, 0), B(0.15, 0.2, 2.7, 1.425, -0.1, 0)];
-    case "floor.triangle.frame": return triFrameBars(-0.1, 0.2);
+    case "floor": return [B(3, FLOOR_T, 3, 0, 0, 0)];
+    case "floor.triangle": return [SLAB(TRI, FLOOR_T / 2, FLOOR_T)];
+    // Measured: 0.2 m borders centred 1.42 m out.
+    case "floor.frame": return [B(3, FLOOR_T, 0.2, 0, 0, -1.42), B(3, FLOOR_T, 0.2, 0, 0, 1.42), B(0.2, FLOOR_T, 2.64, -1.42, 0, 0), B(0.2, FLOOR_T, 2.64, 1.42, 0, 0)];
+    case "floor.triangle.frame": return triFrameBars(0, FLOOR_T);
     // Roofs: a sloped slab rising toward local +z (square) or toward the far corner (triangle). Shapes are approximate.
     case "roof": return [SLAB(SQUARE, [0.25, 0.25, 1.75, 1.75], 0.25)];
     case "roof.triangle": return [SLAB(TRI, [1.75, 0.25, 0.25], 0.25)];
@@ -128,8 +133,9 @@ function partsFor(prefab) {
       for (let k = 0; k < 8; k++) { const top = 1.5 + 0.1875 * (k + 1); p.push(B(0.1875, top, 1, 0.09375 + 0.1875 * k, top / 2, 1)); }
       return p;
     }
-    case "block.stair.spiral": return spiralTreads(0.16, 1.42, 16, 337.5, 3, 0.32);
-    case "block.stair.spiral.triangle": return spiralTreads(0.1, 0.8, 14, 330, 3, 0.2);
+    // Spiral stairs measure 1.51 m tall: each piece climbs half a storey, and two stack per floor.
+    case "block.stair.spiral": return spiralTreads(0.16, 1.42, 8, 180, SPIRAL_RISE, 0.32);
+    case "block.stair.spiral.triangle": return spiralTreads(0.1, 0.8, 7, 170, SPIRAL_RISE, 0.2);
     case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
     default: {
       // Deployables: their measured collision boxes (or bounds), placed by how the item mounts.
