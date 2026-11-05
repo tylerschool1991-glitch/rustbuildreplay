@@ -1207,8 +1207,13 @@ const Builder = (function () {
     requestAnimationFrame(tick);
     ready = true;
   }
-  function tick() {
+  const fly = makeFlyKeys(() => active && !W.open);
+  let lastFrame = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.1, (now - lastFrame) / 1000);
+    lastFrame = now;
     if (active) {
+      if (fly.step(dt, camera, controls)) updateHover();
       controls.update();
       renderer.render(scene, camera);
     }

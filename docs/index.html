@@ -495,7 +495,7 @@ details.fmt p { margin: 8px 0 0; }
           <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
         </div>
         <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above</label>
-        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · drag to orbit, middle-drag or Shift+drag to pan</p>
+        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · drag to orbit, scroll to zoom</p>
         <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
           <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
         </button>
@@ -523,7 +523,7 @@ details.fmt p { margin: 8px 0 0; }
             <div class="small" id="clockSmall">of 00:00 · 0 pieces up</div>
           </div>
         </div>
-        <div class="hint">Drag to orbit · Right-drag to pan · Scroll to zoom</div>
+        <div class="hint">WASD to move · Drag to orbit · Right-drag to pan · Scroll to zoom</div>
       </div>
       <div class="transport">
         <button class="tbtn" id="stepBack" type="button" aria-label="Step back one event" title="Step back (←)">
@@ -955,6 +955,34 @@ const TRI_R = Math.sqrt(3);
 const TRI = [[0, -TRI_R], [1.5, TRI_R / 2], [-1.5, TRI_R / 2]];
 const SQUARE = [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]];
 
+// A wall with an opening, as one extruded piece. outline/holes are [x, y] points in the wall's plane.
+const WALLX = (outline, holes, d) => ({ outline, holes: holes || [], d: d || 0.25 });
+const rectPts = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+// Openings (estimates until measured): doorway 1.2 × 2.2, window 1.0 × 0.9 from 1.2 m up, wall frame 2.4 × 2.7.
+const DOORWAY_OUTLINE = [[-1.5, 0], [-0.6, 0], [-0.6, 2.2], [0.6, 2.2], [0.6, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
+const FRAME_OUTLINE = [[-1.5, 0], [-1.2, 0], [-1.2, 2.7], [1.2, 2.7], [1.2, 0], [1.5, 0], [1.5, 3], [-1.5, 3]];
+
+// A straight flight of solid steps. Runs along +z from z0 (or -z when dir is -1), centred on x.
+function flight(x, width, z0, dir, run, count, base, rise) {
+  const p = [];
+  for (let k = 0; k < count; k++) {
+    const top = base + rise * (k + 1);
+    p.push(B(width, top, run, x, top / 2, z0 + dir * run * (k + 0.5)));
+  }
+  return p;
+}
+// Spiral stairs: wedge-shaped treads around a centre post.
+function spiralTreads(r0, r1, count, sweep, rise, post) {
+  const p = [B(post, rise, post, 0, rise / 2, 0)];
+  const step = sweep / count;
+  for (let k = 0; k < count; k++) {
+    const a0 = (-90 + k * step) * Math.PI / 180, a1 = (-90 + (k + 1) * step) * Math.PI / 180;
+    const poly = [[r0 * Math.cos(a0), r0 * Math.sin(a0)], [r1 * Math.cos(a0), r1 * Math.sin(a0)], [r1 * Math.cos(a1), r1 * Math.sin(a1)], [r0 * Math.cos(a1), r0 * Math.sin(a1)]];
+    p.push(SLAB(poly, rise * (k + 1) / count, 0.14));
+  }
+  return p;
+}
+
 function triFrameBars(y, h) {
   const inr = TRI_R / 2;
   return [90, 210, 330].map(a => {
@@ -962,15 +990,6 @@ function triFrameBars(y, h) {
     return B(2.3, h, 0.3, Math.cos(r) * d, y, Math.sin(r) * d, undefined, 90 - a);
   });
 }
-function spiralSteps(radius, len, rise, count, column) {
-  const p = [B(column, rise, column, 0, rise / 2, 0)];
-  for (let k = 0; k < count; k++) {
-    const a = k * (360 / count) * 0.85, r = a * Math.PI / 180, top = rise * (k + 1) / count;
-    p.push(B(len, 0.12, 0.5, Math.cos(r) * radius, top - 0.06, Math.sin(r) * radius, undefined, -a));
-  }
-  return p;
-}
-
 function partsFor(prefab) {
   switch (prefab) {
     // Foundations extend 3 m below their top-minus-1 so they read as sunk into slopes.
@@ -981,11 +1000,11 @@ function partsFor(prefab) {
       return [0.75, 0.5, 0.25].map((top, k) => B(3, top + 1, 0.5, 0, (top - 1) / 2, 0.25 + 0.5 * k));
     }
     case "wall": return [B(3, 3, 0.25, 0, 1.5, 0)];
-    case "wall.doorway": return [B(0.9, 3, 0.25, -1.05, 1.5, 0), B(0.9, 3, 0.25, 1.05, 1.5, 0), B(1.2, 0.8, 0.25, 0, 2.6, 0)];
-    case "wall.window": return [B(1, 3, 0.25, -1, 1.5, 0), B(1, 3, 0.25, 1, 1.5, 0), B(1, 1.2, 0.25, 0, 0.6, 0), B(1, 0.9, 0.25, 0, 2.55, 0)];
+    case "wall.doorway": return [WALLX(DOORWAY_OUTLINE)];
+    case "wall.window": return [WALLX(rectPts(-1.5, 0, 1.5, 3), [rectPts(-0.5, 1.2, 0.5, 2.1)])];
     case "wall.half": return [B(3, 1.5, 0.25, 0, 0.75, 0)];
     case "wall.low": return [B(3, 1, 0.25, 0, 0.5, 0)];
-    case "wall.frame": return [B(0.3, 3, 0.25, -1.35, 1.5, 0), B(0.3, 3, 0.25, 1.35, 1.5, 0), B(2.4, 0.3, 0.25, 0, 2.85, 0)];
+    case "wall.frame": return [WALLX(FRAME_OUTLINE)];
     case "floor": return [B(3, 0.2, 3, 0, -0.1, 0)];
     case "floor.triangle": return [SLAB(TRI, 0, 0.2)];
     case "floor.frame": return [B(3, 0.2, 0.3, 0, -0.1, -1.35), B(3, 0.2, 0.3, 0, -0.1, 1.35), B(0.3, 0.2, 2.4, -1.35, -0.1, 0), B(0.3, 0.2, 2.4, 1.35, -0.1, 0)];
@@ -993,22 +1012,20 @@ function partsFor(prefab) {
     // Roofs: a sloped slab rising toward local +z (square) or toward the far corner (triangle). Shapes are approximate.
     case "roof": return [SLAB(SQUARE, [0.25, 0.25, 1.75, 1.75], 0.25)];
     case "roof.triangle": return [SLAB(TRI, [1.75, 0.25, 0.25], 0.25)];
-    case "block.stair.ushape": {
-      const p = [];
-      for (let k = 0; k < 6; k++) { const h = 0.25 * (k + 1); p.push(B(1.4, h, 0.4, -0.75, h / 2, -1.25 + 0.4 * k)); }
-      p.push(B(2.9, 1.5, 0.5, 0, 0.75, 1.2));
-      for (let k = 0; k < 6; k++) { const h = 1.5 + 0.25 * (k + 1); p.push(B(1.4, h, 0.4, 0.75, h / 2, 0.75 - 0.4 * k)); }
-      return p;
-    }
+    // U-shaped: first flight up the left half to a landing across the back, second flight back down the right half.
+    case "block.stair.ushape":
+      return flight(-0.76, 1.48, -1.5, 1, 0.25, 8, 0, 0.1875)
+        .concat([B(3, 1.5, 1, 0, 0.75, 1)])
+        .concat(flight(0.76, 1.48, 0.5, -1, 0.25, 8, 1.5, 0.1875));
+    // L-shaped: first flight up the left side to a corner landing, second flight turns right along the back.
     case "block.stair.lshape": {
-      const p = [];
-      for (let k = 0; k < 5; k++) { const h = 0.3 * (k + 1); p.push(B(1.4, h, 0.45, -0.75, h / 2, -1.25 + 0.45 * k)); }
-      p.push(B(1.5, 1.8, 1.4, -0.75, 0.9, 0.8));
-      for (let k = 0; k < 4; k++) { const h = 1.8 + 0.3 * (k + 1); p.push(B(0.38, h, 1.4, 0.19 + 0.38 * k, h / 2, 0.8)); }
+      const p = flight(-0.75, 1.5, -1.5, 1, 0.25, 8, 0, 0.1875);
+      p.push(B(1.5, 1.5, 1, -0.75, 0.75, 1));
+      for (let k = 0; k < 8; k++) { const top = 1.5 + 0.1875 * (k + 1); p.push(B(0.1875, top, 1, 0.09375 + 0.1875 * k, top / 2, 1)); }
       return p;
     }
-    case "block.stair.spiral": return spiralSteps(0.85, 1.3, 3, 12, 0.3);
-    case "block.stair.spiral.triangle": return spiralSteps(0.5, 0.75, 3, 10, 0.2);
+    case "block.stair.spiral": return spiralTreads(0.16, 1.42, 16, 337.5, 3, 0.32);
+    case "block.stair.spiral.triangle": return spiralTreads(0.1, 0.8, 14, 330, 3, 0.2);
     case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
     default: {
       // Deployables: a generic block with the item's footprint and height, positioned by how it mounts.
@@ -1060,7 +1077,18 @@ function slabGeo(poly, tops, t) {
   geoCache.set(key, res);
   return res;
 }
-const partGeo = p => (p.poly ? slabGeo(p.poly, p.tops, p.t) : boxGeo(p.w, p.h, p.d));
+function wallGeo(outline, holes, d) {
+  const key = JSON.stringify(["wallx", outline, holes, d]);
+  if (geoCache.has(key)) return geoCache.get(key);
+  const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
+  holes.forEach(h => shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y)))));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false });
+  geo.translate(0, 0, -d / 2);
+  const res = { geo, edges: new THREE.EdgesGeometry(geo, 20) };
+  geoCache.set(key, res);
+  return res;
+}
+const partGeo = p => (p.outline ? wallGeo(p.outline, p.holes, p.d) : p.poly ? slabGeo(p.poly, p.tops, p.t) : boxGeo(p.w, p.h, p.d));
 function placePart(obj, p) {
   obj.position.set(p.x || 0, p.y || 0, p.z || 0);
   obj.rotation.y = (p.ry || 0) * Math.PI / 180;
@@ -1092,6 +1120,9 @@ const ICON_PARTS = {
   "foundation.triangle": [SLAB(TRI, 1.4, 1.4)],
   "foundation.steps": [B(3, 1.4, 3, 0, 0.7, -1.5), ...[0.75, 0.5, 0.25].map((top, k) => B(3, top * 1.4, 0.5, 0, top * 0.7, 0.25 + 0.5 * k))],
   "floor": [B(3, 0.3, 3, 0, 0.15, 0)],
+  "wall.doorway": [B(0.9, 3, 0.25, -1.05, 1.5, 0), B(0.9, 3, 0.25, 1.05, 1.5, 0), B(1.2, 0.8, 0.25, 0, 2.6, 0)],
+  "wall.window": [B(1, 3, 0.25, -1, 1.5, 0), B(1, 3, 0.25, 1, 1.5, 0), B(1, 1.2, 0.25, 0, 0.6, 0), B(1, 0.9, 0.25, 0, 2.55, 0)],
+  "wall.frame": [B(0.3, 3, 0.25, -1.35, 1.5, 0), B(0.3, 3, 0.25, 1.35, 1.5, 0), B(2.4, 0.3, 0.25, 0, 2.85, 0)],
   "floor.triangle": [SLAB(TRI, 0.3, 0.3)]
 };
 const iconCache = new Map();
@@ -1291,6 +1322,41 @@ function makeStage() {
   grid.position.y = 0.01;
   scene.add(grid);
   return { scene, grid, ground };
+}
+
+// WASD moves the camera across the ground (relative to where it's facing); the mouse still rotates and zooms.
+function makeFlyKeys(isActive) {
+  const down = new Set();
+  window.addEventListener("keydown", e => {
+    if (!isActive() || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target && e.target.closest && e.target.closest("input, select, textarea")) return;
+    const k = e.key.toLowerCase();
+    if (k.length === 1 && "wasd".indexOf(k) >= 0) { down.add(k); e.preventDefault(); }
+  });
+  window.addEventListener("keyup", e => down.delete(e.key.toLowerCase()));
+  window.addEventListener("blur", () => down.clear());
+  const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
+  return {
+    step(dt, camera, controls) {
+      if (!down.size || !isActive()) return false;
+      camera.getWorldDirection(fwd);
+      fwd.y = 0;
+      if (fwd.lengthSq() < 1e-6) return false;
+      fwd.normalize();
+      right.crossVectors(fwd, camera.up).normalize();
+      move.set(0, 0, 0);
+      if (down.has("w")) move.add(fwd);
+      if (down.has("s")) move.sub(fwd);
+      if (down.has("d")) move.add(right);
+      if (down.has("a")) move.sub(right);
+      if (!move.lengthSq()) return false;
+      const speed = Math.max(6, camera.position.distanceTo(controls.target) * 0.9);
+      move.normalize().multiplyScalar(speed * dt);
+      camera.position.add(move);
+      controls.target.add(move);
+      return true;
+    }
+  };
 }
 
 // Camera framing around the base (rocks get extra room).
@@ -1919,6 +1985,7 @@ const Viewer = (function () {
   if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
   window.addEventListener("resize", resize);
 
+  const fly = makeFlyKeys(() => active);
   let last = performance.now();
   function tick(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -1930,6 +1997,7 @@ const Viewer = (function () {
         sync(true);
       }
       runAnims(now);
+      fly.step(dt, camera, controls);
       controls.update();
       renderer.render(scene, camera);
     }
@@ -3154,8 +3222,13 @@ const Builder = (function () {
     requestAnimationFrame(tick);
     ready = true;
   }
-  function tick() {
+  const fly = makeFlyKeys(() => active && !W.open);
+  let lastFrame = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.1, (now - lastFrame) / 1000);
+    lastFrame = now;
     if (active) {
+      if (fly.step(dt, camera, controls)) updateHover();
       controls.update();
       renderer.render(scene, camera);
     }

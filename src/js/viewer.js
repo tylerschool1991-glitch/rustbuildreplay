@@ -322,6 +322,7 @@ const Viewer = (function () {
   if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
   window.addEventListener("resize", resize);
 
+  const fly = makeFlyKeys(() => active);
   let last = performance.now();
   function tick(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -333,6 +334,7 @@ const Viewer = (function () {
         sync(true);
       }
       runAnims(now);
+      fly.step(dt, camera, controls);
       controls.update();
       renderer.render(scene, camera);
     }
