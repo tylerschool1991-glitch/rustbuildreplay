@@ -1,0 +1,157 @@
+<title>Rust Build Replay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/*CSS*/
+</style>
+<!--BODY-->
+<div class="app">
+  <header class="top">
+    <a class="brand" href="#archive"><span class="logo">Build<span>Replay</span></span><span class="brand-sub">for Rust base builders</span></a>
+    <div class="top-actions">
+      <span class="status" id="status" role="status"></span>
+      <a class="btn" href="#archive">Archive</a>
+      <button class="btn primary" id="loadBtn" type="button">Load build log</button>
+      <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <!-- Archive -->
+  <section class="archive" id="view-archive" aria-labelledby="archiveTitle">
+    <div class="arch-head">
+      <h1 class="arch-title" id="archiveTitle">Base archive</h1>
+      <p class="arch-lede">Watch Rust bases go up piece by piece, from the first twig foundation to the last armored door. Orbit around them, step through every placement and peel back floors to see the layout. The bases below are examples while the archive is being built.</p>
+    </div>
+    <div class="filters">
+      <div class="chips" id="settingChips" role="group" aria-label="Filter by terrain">
+        <button type="button" class="chip" data-setting="all" aria-pressed="true">All terrain</button>
+        <button type="button" class="chip" data-setting="open" aria-pressed="false">Open ground</button>
+        <button type="button" class="chip" data-setting="rock" aria-pressed="false">Rock</button>
+        <button type="button" class="chip" data-setting="cave" aria-pressed="false">Cave</button>
+        <button type="button" class="chip" data-setting="cliff" aria-pressed="false">Cliff</button>
+      </div>
+      <label class="sel" for="groupSel">Group
+        <select id="groupSel">
+          <option value="all">Any size</option>
+          <option value="Solo">Solo</option>
+          <option value="Duo">Duo</option>
+          <option value="Trio">Trio</option>
+          <option value="Clan">Clan</option>
+        </select>
+      </label>
+      <span class="count" id="archCount"></span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="empty" id="archEmpty" hidden>No bases match those filters yet.</p>
+    <details class="fmt">
+      <summary>Build log format</summary>
+      <p>The server plugin writes one event per build action. Positions are in metres, rotation is yaw in degrees. Terrain and rock formations are optional.</p>
+      <pre>{
+  "name": "My Bunker Base",
+  "setting": "rock",            // open | rock | cave | cliff
+  "source": "recorded",         // recorded | copypaste
+  "terrain": { "size": 72, "res": 49, "heights": [ ... ] },
+  "features": [ { "type": "rock.anvil", "pos": [0, 0, 0], "rot": 0 } ],
+  "events": [
+    { "t": 4.2, "op": "place", "id": 1, "prefab": "foundation",
+      "grade": "twigs", "pos": [0, 0, 0], "rot": 0 },
+    { "t": 61.0, "op": "upgrade", "id": 1, "grade": "stone" },
+    { "t": 75.5, "op": "remove", "id": 1 }
+  ]
+}</pre>
+      <p>Grades: twigs, wood, stone, metal, toptier. Prefabs: foundation, wall, wall.doorway, wall.window, floor, block.stair.ushape, door.hinged.metal, cupboard.tool.deployed, box.wooden.large, furnace, sleepingbag_leather_deployed. Formations: rock.anvil, rock.cliff, cave.small. Unknown prefabs show as grey blocks.</p>
+    </details>
+  </section>
+
+  <!-- Base page -->
+  <main class="workspace" id="view-base" hidden>
+    <section class="stage" aria-label="3D build replay">
+      <div class="viewport" id="viewport">
+        <canvas id="scene" aria-label="3D view of the base. Drag to orbit, scroll or pinch to zoom."></canvas>
+        <div class="now">
+          <div class="now-card">
+            <div class="now-kicker" id="nowKicker">Event 0 of 0</div>
+            <div class="now-label" id="nowLabel">Ready to build</div>
+            <div class="now-sub" id="nowSub">Press play or step through the log</div>
+          </div>
+          <div class="now-card clock">
+            <div class="small">BUILD CLOCK</div>
+            <div class="big" id="clockBig">00:00</div>
+            <div class="small" id="clockSmall">of 00:00 · 0 pieces up</div>
+          </div>
+        </div>
+        <div class="hint">Drag to orbit · Right-drag to pan · Scroll to zoom</div>
+      </div>
+      <div class="transport">
+        <button class="tbtn" id="stepBack" type="button" aria-label="Step back one event" title="Step back (←)">
+          <svg viewBox="0 0 16 16"><rect x="2" y="2" width="2" height="12"/><path d="M14 2v12L5 8z"/></svg>
+        </button>
+        <button class="tbtn play" id="playBtn" type="button" aria-label="Play" title="Play / pause (Space)">
+          <svg viewBox="0 0 16 16" id="playIcon"><path d="M4 2v12l10-6z"/></svg>
+        </button>
+        <button class="tbtn" id="stepFwd" type="button" aria-label="Step forward one event" title="Step forward (→)">
+          <svg viewBox="0 0 16 16"><path d="M2 2v12l9-6z"/><rect x="12" y="2" width="2" height="12"/></svg>
+        </button>
+        <div class="scrub">
+          <input type="range" id="scrubber" min="0" max="1000" step="1" value="0" aria-label="Replay position">
+          <div class="scrub-meta"><span id="replayPos">0:00</span><span id="replayLen">0:00 replay</span></div>
+        </div>
+        <div class="seg" id="speedSeg" role="group" aria-label="Playback speed">
+          <button type="button" data-speed="1" aria-pressed="false">1×</button>
+          <button type="button" data-speed="4" aria-pressed="false">4×</button>
+          <button type="button" data-speed="16" aria-pressed="true">16×</button>
+          <button type="button" data-speed="64" aria-pressed="false">64×</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="card info">
+        <a class="back" href="#archive">← All bases</a>
+        <h2 class="info-name" id="infoName">Base</h2>
+        <div class="tags" id="infoTags"></div>
+        <dl class="info-stats" id="infoStats"></dl>
+        <div class="gbar" id="infoGrades" aria-label="Final grade mix"></div>
+        <p class="info-note" id="infoNote"></p>
+        <div class="video" id="infoVideo"></div>
+        <div class="info-actions">
+          <button class="btn" id="copyLog" type="button">Copy this log</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>View</h2>
+        <div class="toggles">
+          <label class="tog"><input type="checkbox" id="optClean" checked> Clean replay</label>
+          <label class="tog"><input type="checkbox" id="optIdle" checked> Skip idle time</label>
+          <label class="tog"><input type="checkbox" id="optXray"> X-ray walls</label>
+          <label class="tog"><input type="checkbox" id="optGhost"> See-through rock</label>
+          <label class="tog"><input type="checkbox" id="optOrbit"> Auto orbit</label>
+          <div class="tog-desc">Clean replay hides pieces that were placed and later demolished.</div>
+        </div>
+        <div class="row">
+          <span>Show floors</span>
+          <div class="seg" id="floorSeg" role="group" aria-label="Floors to show">
+            <button type="button" data-max="99" aria-pressed="true">All</button>
+            <button type="button" data-max="1" aria-pressed="false">Up to 2nd</button>
+            <button type="button" data-max="0" aria-pressed="false">Ground</button>
+          </div>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="card logcard">
+        <h2>Build log <small id="logCount">0 events</small></h2>
+        <ol class="log" id="log"></ol>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/*JS*/
+</script>
