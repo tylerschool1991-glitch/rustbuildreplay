@@ -88,6 +88,7 @@ function route() {
     });
   });
 
+  window.BuildReplayTest = Builder.test; // used by automated checks
   window.addEventListener("hashchange", route);
   route();
 })();

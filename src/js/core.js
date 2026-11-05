@@ -12,6 +12,8 @@ const GRADE_ORDER = ["twigs", "wood", "stone", "metal", "toptier"];
 
 const PREFAB_NAMES = {
   "foundation": "Foundation",
+  "foundation.triangle": "Triangle Foundation",
+  "foundation.steps": "Foundation Steps",
   "wall": "Wall",
   "wall.doorway": "Doorway",
   "wall.window": "Window Wall",
@@ -20,6 +22,14 @@ const PREFAB_NAMES = {
   "wall.frame": "Wall Frame",
   "floor": "Floor",
   "floor.frame": "Floor Frame",
+  "floor.triangle": "Triangle Floor",
+  "floor.triangle.frame": "Triangle Floor Frame",
+  "roof": "Roof",
+  "roof.triangle": "Triangle Roof",
+  "block.stair.lshape": "L-Shaped Stairs",
+  "block.stair.spiral": "Spiral Stairs",
+  "block.stair.spiral.triangle": "Triangle Spiral Stairs",
+  "ramp": "Ramp",
   "block.stair.ushape": "U-Shaped Stairs",
   "door.hinged.metal": "Sheet Metal Door",
   "cupboard.tool.deployed": "Tool Cupboard",
@@ -27,7 +37,12 @@ const PREFAB_NAMES = {
   "furnace": "Furnace",
   "sleepingbag_leather_deployed": "Sleeping Bag"
 };
-const STRUCTURAL = new Set(["foundation", "wall", "wall.doorway", "wall.window", "wall.half", "wall.low", "wall.frame", "floor", "floor.frame", "block.stair.ushape"]);
+const STRUCTURAL = new Set([
+  "foundation", "foundation.triangle", "foundation.steps",
+  "wall", "wall.doorway", "wall.window", "wall.half", "wall.low", "wall.frame",
+  "floor", "floor.frame", "floor.triangle", "floor.triangle.frame", "roof", "roof.triangle",
+  "block.stair.ushape", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp"
+]);
 const WALLS = new Set(["wall", "wall.doorway", "wall.window", "wall.half", "wall.low", "wall.frame"]);
 const LEVEL_NAMES = ["Ground floor", "2nd floor", "3rd floor", "4th floor", "5th floor", "6th floor"];
 

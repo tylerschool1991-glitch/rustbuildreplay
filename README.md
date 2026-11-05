@@ -4,7 +4,7 @@ A web archive where Rust base builders showcase their bases as 3D replays: every
 
 ## What's here
 
-- **Sandbox** – build a base in the browser on Rust’s 3 m grid with its support rules (walls need foundations or floors, floors need walls, unsupported pieces collapse). Place, upgrade, rotate, demolish, undo; saved in your browser; one click to watch it as a replay.
+- **Sandbox** – build a base in the browser with Rust’s building pieces: square and triangle foundations and floors, foundation steps, all wall types, floor frames, U/L/spiral/triangle-spiral stairs, ramps, roofs and triangle roofs. Pieces snap on shared 3 m edges like in Rust, with its support rules (walls need foundations or floors, floors need walls, unsupported pieces collapse). Place, upgrade, rotate, demolish, undo; saved in your browser; one click to watch it as a replay.
 - **Archive** – gallery of bases with terrain filters (open ground, rock, cave, cliff) and group size.
 - **Base page** – the replay viewer: timeline scrubber, step forward/back, 1×–64× speed, clean replay (hides demolished mistakes), skip idle time, X-ray walls, see-through rock, floor cutaways, clickable build log.
 - **Terrain and formations** – heightmap terrain plus stand-in models for anvil rocks, cliffs and caves.
@@ -73,7 +73,7 @@ The live site is served by GitHub Pages from the `docs/` folder (Settings → Pa
 
 ## Roadmap
 
-1. ~~Sandbox builder~~ – build on the 3 m grid with Rust support rules; every build becomes a replay.
+1. ~~Sandbox builder~~ – squares and triangles on shared 3 m edges with Rust support rules; every build becomes a replay.
 2. Walk mode: drop in a Rust-sized player to test doorways, stairs and crouch spots.
 3. Peek checker: highlight sightlines into the base from outside.
 4. Oxide/Carbon plugin (shelved, in `plugin/`) for importing real builds.

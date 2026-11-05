@@ -39,12 +39,41 @@ function setRockGhost(on) {
 setXray(false);
 
 // ---------- Building pieces ----------
-// Local frame: origin at the piece's base centre; walls run along local x.
-const B = (w, h, d, x, y, z, m) => ({ w, h, d, x, y, z, m });
+// Local frame: origin at the piece's base centre; walls run along local x and face local z.
+// Parts are boxes (w, h, d at x, y, z, optional yaw ry in degrees) or polygon slabs
+// (poly = [[x, z], ...] with a top height per vertex and a thickness t).
+const B = (w, h, d, x, y, z, m, ry) => ({ w, h, d, x, y, z, m, ry });
+const SLAB = (poly, tops, t, m) => ({ poly, tops: Array.isArray(tops) ? tops : poly.map(() => tops), t, m });
+// Equilateral triangle with 3 m sides, centred on its centroid; edge normals point at 90°, 210° and 330°.
+const TRI_R = Math.sqrt(3);
+const TRI = [[0, -TRI_R], [1.5, TRI_R / 2], [-1.5, TRI_R / 2]];
+const SQUARE = [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]];
+
+function triFrameBars(y, h) {
+  const inr = TRI_R / 2;
+  return [90, 210, 330].map(a => {
+    const r = a * Math.PI / 180, d = inr - 0.15;
+    return B(2.3, h, 0.3, Math.cos(r) * d, y, Math.sin(r) * d, undefined, 90 - a);
+  });
+}
+function spiralSteps(radius, len, rise, count, column) {
+  const p = [B(column, rise, column, 0, rise / 2, 0)];
+  for (let k = 0; k < count; k++) {
+    const a = k * (360 / count) * 0.85, r = a * Math.PI / 180, top = rise * (k + 1) / count;
+    p.push(B(len, 0.12, 0.5, Math.cos(r) * radius, top - 0.06, Math.sin(r) * radius, undefined, -a));
+  }
+  return p;
+}
+
 function partsFor(prefab) {
   switch (prefab) {
     // Foundations extend 3 m below their top-minus-1 so they read as sunk into slopes.
     case "foundation": return [B(3, 4, 3, 0, -1, 0)];
+    case "foundation.triangle": return [SLAB(TRI, 1, 4)];
+    case "foundation.steps": {
+      // Attached to a foundation edge; steps lead outward along local +z.
+      return [0.75, 0.5, 0.25].map((top, k) => B(3, top + 1, 0.5, 0, (top - 1) / 2, 0.25 + 0.5 * k));
+    }
     case "wall": return [B(3, 3, 0.25, 0, 1.5, 0)];
     case "wall.doorway": return [B(0.9, 3, 0.25, -1.05, 1.5, 0), B(0.9, 3, 0.25, 1.05, 1.5, 0), B(1.2, 0.8, 0.25, 0, 2.6, 0)];
     case "wall.window": return [B(1, 3, 0.25, -1, 1.5, 0), B(1, 3, 0.25, 1, 1.5, 0), B(1, 1.2, 0.25, 0, 0.6, 0), B(1, 0.9, 0.25, 0, 2.55, 0)];
@@ -52,7 +81,12 @@ function partsFor(prefab) {
     case "wall.low": return [B(3, 1, 0.25, 0, 0.5, 0)];
     case "wall.frame": return [B(0.3, 3, 0.25, -1.35, 1.5, 0), B(0.3, 3, 0.25, 1.35, 1.5, 0), B(2.4, 0.3, 0.25, 0, 2.85, 0)];
     case "floor": return [B(3, 0.2, 3, 0, -0.1, 0)];
+    case "floor.triangle": return [SLAB(TRI, 0, 0.2)];
     case "floor.frame": return [B(3, 0.2, 0.3, 0, -0.1, -1.35), B(3, 0.2, 0.3, 0, -0.1, 1.35), B(0.3, 0.2, 2.4, -1.35, -0.1, 0), B(0.3, 0.2, 2.4, 1.35, -0.1, 0)];
+    case "floor.triangle.frame": return triFrameBars(-0.1, 0.2);
+    // Roofs: a sloped slab rising toward local +z (square) or toward the far corner (triangle). Shapes are approximate.
+    case "roof": return [SLAB(SQUARE, [0.25, 0.25, 1.75, 1.75], 0.25)];
+    case "roof.triangle": return [SLAB(TRI, [1.75, 0.25, 0.25], 0.25)];
     case "block.stair.ushape": {
       const p = [];
       for (let k = 0; k < 6; k++) { const h = 0.25 * (k + 1); p.push(B(1.4, h, 0.4, -0.75, h / 2, -1.25 + 0.4 * k)); }
@@ -60,6 +94,16 @@ function partsFor(prefab) {
       for (let k = 0; k < 6; k++) { const h = 1.5 + 0.25 * (k + 1); p.push(B(1.4, h, 0.4, 0.75, h / 2, 0.75 - 0.4 * k)); }
       return p;
     }
+    case "block.stair.lshape": {
+      const p = [];
+      for (let k = 0; k < 5; k++) { const h = 0.3 * (k + 1); p.push(B(1.4, h, 0.45, -0.75, h / 2, -1.25 + 0.45 * k)); }
+      p.push(B(1.5, 1.8, 1.4, -0.75, 0.9, 0.8));
+      for (let k = 0; k < 4; k++) { const h = 1.8 + 0.3 * (k + 1); p.push(B(0.38, h, 1.4, 0.19 + 0.38 * k, h / 2, 0.8)); }
+      return p;
+    }
+    case "block.stair.spiral": return spiralSteps(0.85, 1.3, 3, 12, 0.3);
+    case "block.stair.spiral.triangle": return spiralSteps(0.5, 0.75, 3, 10, 0.2);
+    case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
     case "door.hinged.metal": return [B(1.14, 2.15, 0.08, 0, 1.08, 0, "door")];
     case "cupboard.tool.deployed": return [B(0.9, 1.0, 0.55, 0, 0.5, 0, "tc"), B(0.96, 0.08, 0.6, 0, 1.04, 0, "tcLid")];
     case "box.wooden.large": return [B(1.3, 0.7, 0.75, 0, 0.35, 0, "box")];
@@ -75,17 +119,53 @@ function boxGeo(w, h, d) {
   if (!geoCache.has(key)) { const geo = new THREE.BoxGeometry(w, h, d); geoCache.set(key, { geo, edges: new THREE.EdgesGeometry(geo) }); }
   return geoCache.get(key);
 }
+// Convex polygon slab with a (possibly sloped) planar top.
+function slabGeo(poly, tops, t) {
+  const key = JSON.stringify([poly, tops, t]);
+  if (geoCache.has(key)) return geoCache.get(key);
+  const n = poly.length;
+  const cx = poly.reduce((a, v) => a + v[0], 0) / n, cz = poly.reduce((a, v) => a + v[1], 0) / n;
+  const pos = [];
+  const V = (i, top) => [poly[i][0], top ? tops[i] : tops[i] - t, poly[i][1]];
+  const tri = (a, b, c, out) => {
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const nx = ab[1] * ac[2] - ab[2] * ac[1], ny = ab[2] * ac[0] - ab[0] * ac[2], nz = ab[0] * ac[1] - ab[1] * ac[0];
+    if (nx * out[0] + ny * out[1] + nz * out[2] < 0) { const tmp = b; b = c; c = tmp; }
+    pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  };
+  for (let i = 1; i < n - 1; i++) {
+    tri(V(0, true), V(i, true), V(i + 1, true), [0, 1, 0]);
+    tri(V(0, false), V(i, false), V(i + 1, false), [0, -1, 0]);
+  }
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const out = [(poly[i][0] + poly[j][0]) / 2 - cx, 0, (poly[i][1] + poly[j][1]) / 2 - cz];
+    tri(V(i, true), V(j, true), V(j, false), out);
+    tri(V(i, true), V(j, false), V(i, false), out);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  const res = { geo, edges: new THREE.EdgesGeometry(geo) };
+  geoCache.set(key, res);
+  return res;
+}
+const partGeo = p => (p.poly ? slabGeo(p.poly, p.tops, p.t) : boxGeo(p.w, p.h, p.d));
+function placePart(obj, p) {
+  obj.position.set(p.x || 0, p.y || 0, p.z || 0);
+  obj.rotation.y = (p.ry || 0) * Math.PI / 180;
+}
 
 function makePiece(e, y0) {
   const structural = STRUCTURAL.has(e.prefab);
   const group = new THREE.Group();
   partsFor(e.prefab).forEach(p => {
-    const c = boxGeo(p.w, p.h, p.d);
+    const c = partGeo(p);
     const mesh = new THREE.Mesh(c.geo, structural ? MATS[e.grade] || MATS.twigs : DMATS[p.m] || DMATS.generic);
-    mesh.position.set(p.x, p.y, p.z);
+    placePart(mesh, p);
     mesh.castShadow = true; mesh.receiveShadow = true;
     const ln = new THREE.LineSegments(c.edges, EDGE_MAT);
-    ln.position.copy(mesh.position);
+    placePart(ln, p);
     group.add(mesh, ln);
   });
   group.position.set(e.pos[0], e.pos[1], e.pos[2]);
