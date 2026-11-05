@@ -222,6 +222,10 @@ const Viewer = (function () {
     const f = frameFor(log, world.y0);
     controls.target.copy(f.target);
     camera.position.copy(f.position);
+    const dist = f.position.distanceTo(f.target);
+    controls.maxDistance = Math.max(90, dist * 1.6);
+    scene.fog.near = Math.max(50, dist * 0.9);
+    scene.fog.far = Math.max(130, dist * 3);
     controls.update();
     setXray(ui.xray.checked);
     ui.ghost.checked = log.setting === "cave";

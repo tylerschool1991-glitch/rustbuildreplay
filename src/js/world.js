@@ -17,7 +17,7 @@ const DMATS = {
 };
 const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x141713, transparent: true, opacity: 0.55 });
 const ROCK_MAT = new THREE.MeshStandardMaterial({ color: lin("#7a766c"), roughness: 1, flatShading: true, side: THREE.DoubleSide });
-const TERRAIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+const TERRAIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
 
 function setXray(on) {
   GRADE_ORDER.forEach(k => {
@@ -189,8 +189,10 @@ function makeTerrain(t) {
   const c = new THREE.Color();
   for (let k = 0; k < pos.count; k++) {
     const x = pos.getX(k), z = pos.getZ(k), ny = nrm.getY(k);
-    c.copy(grass).lerp(dirt, 0.3 + 0.3 * noise3(x * 0.12, 0.5, z * 0.12, 3));
-    if (ny < 0.85) c.lerp(rock, Math.min(1, (0.85 - ny) / 0.3));
+    const y = pos.getY(k);
+    c.copy(grass).lerp(dirt, Math.max(0, Math.min(1, 0.35 + 0.55 * noise3(x * 0.09, 0.5, z * 0.09, 3))));
+    c.multiplyScalar(0.86 + 0.03 * Math.min(8, Math.max(0, y)));      // higher ground slightly lighter
+    if (ny < 0.9) c.lerp(rock, Math.min(1, (0.9 - ny) / 0.25));
     col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
   }
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -310,7 +312,7 @@ function makeStage() {
   const grid = new THREE.GridHelper(72, 24, 0x4a5440, 0x414a38); // the 3 m Rust building grid
   grid.position.y = 0.01;
   scene.add(grid);
-  return { scene, grid };
+  return { scene, grid, ground };
 }
 
 // Camera framing around the base (rocks get extra room).

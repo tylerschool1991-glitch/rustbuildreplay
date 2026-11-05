@@ -122,6 +122,7 @@
           <button class="btn primary" id="bReplay" type="button">Watch replay</button>
           <button class="btn" id="bCopy" type="button">Copy log</button>
           <button class="btn" id="bClear" type="button">New build</button>
+          <button class="btn" id="bTerrain" type="button">New terrain</button>
         </div>
       </div>
 
@@ -134,7 +135,7 @@
         <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above the one I'm on</label>
       </div>
 
-      <p class="note">Pieces snap to Rust's 3 m building grid and follow its support rules: walls need a foundation or floor, floors need walls, and anything left unsupported collapses. Deployable sizes are close approximations still being checked against the game. Walk mode and the peek checker are next. Your build is saved in this browser.</p>
+      <p class="note">Pieces snap to each other's edges like in Rust and follow its support rules: walls need a foundation or floor, floors need walls, and anything left unsupported collapses. Foundations sit on the terrain: they can't be buried by a rise or float too high over a dip, and snapped foundations stay level. Deployable sizes are close approximations still being checked against the game. Walk mode and the peek checker are next. Your build is saved in this browser.</p>
     </aside>
   </main>
 

@@ -1,4 +1,4 @@
-// The sandbox: build a base in the browser with Rust's building pieces.
+// The sandbox: build a base in the browser with Rust's building pieces on randomized, never-flat terrain.
 // Snapping works on shared edges, so squares and triangles (3 m sides) fit together the way they do in Rust.
 // Every action is logged in the same event format the replay viewer plays.
 const Builder = (function () {
@@ -32,8 +32,10 @@ const Builder = (function () {
     "sleepingbag_leather_deployed": [0.8, 1.9]
   };
   const TOOLS = { place: "Place", upgrade: "Upgrade", rotate: "Rotate", demolish: "Demolish" };
-  const STORE_KEY = "buildreplay.sandbox.v2";
+  const STORE_KEY = "buildreplay.sandbox.v3";
   const MAX_LEVEL = 5;
+  const FOUNDATION_DEPTH = 4; // the foundation model reaches 4 m below its top
+  const SNAP_PX = 85;         // how close (in screen pixels) the pointer must be to a snap point
   const REASON = {
     FS: "Foundation steps go on the outer edge of a foundation",
     W: "Walls need a foundation or floor edge under them, or a wall below",
@@ -44,12 +46,14 @@ const Builder = (function () {
     X: "Place it on a foundation or solid floor, clear of stairs"
   };
   const NO_SNAP = {
+    F: "Point at the ground",
     FS: "Point at the outer edge of a foundation",
     W: "Point at the edge of a foundation or floor",
     FL: "Point above a room with walls, or next to another floor",
     RF: "Point above a room with walls",
     S: "Point at a foundation or solid floor of the same shape",
-    D: "Point at a doorway"
+    D: "Point at a doorway",
+    X: "Point at a foundation or solid floor on this level"
   };
 
   const kindOf = prefab =>
@@ -66,9 +70,13 @@ const Builder = (function () {
   const cosd = d => Math.cos(rad(d)), sind = d => Math.sin(rad(d));
   const norm = d => { const r = ((d % 360) + 360) % 360; return Math.round(r * 1000) / 1000 % 360; };
   const q = v => Math.round(v * 20);
-  const edgeKey = (e, L) => "E:" + q(e.mx) + ":" + q(e.mz) + ":" + L;
-  const fpKey = (cx, cz, L) => "P:" + q(cx) + ":" + q(cz) + ":" + L;
+  // Every surface sits at an absolute height H: a foundation's top, or a floor's top. Keys use H, so
+  // bases on different ground heights never collide.
+  const Hof = p => R2(p.by + 1 + 3 * p.L);
+  const edgeKey = (e, H) => "E:" + q(e.mx) + ":" + q(e.mz) + ":" + q(H);
+  const fpKey = (cx, cz, H) => "P:" + q(cx) + ":" + q(cz) + ":" + q(H);
   const wallRot = a => norm(90 - a);
+  const sameH = (a, b) => Math.abs(a - b) < 0.1;
 
   // theta: footprint orientation (degrees, measured from +x toward +z). Square normals at theta+0/90/180/270,
   // triangle normals at theta+90/210/330. Meshes use rotation.y = -theta.
@@ -83,10 +91,9 @@ const Builder = (function () {
       return { a, nx: cosd(a), nz: sind(a), mx: fp.cx + ap * cosd(a), mz: fp.cz + ap * sind(a) };
     });
   }
-  // The footprint of a new shape that shares edge e, on the far side of it.
   function attach(e, shape) {
     const ap = APOTHEM[shape];
-    return { cx: e.mx + e.nx * ap, cz: e.mz + e.nz * ap, theta: norm(shape === "sq" ? e.a + 180 : e.a + 90) };
+    return { shape, cx: e.mx + e.nx * ap, cz: e.mz + e.nz * ap, theta: norm(shape === "sq" ? e.a + 180 : e.a + 90) };
   }
   function rectPoly(cx, cz, w, d, phi) {
     const c = cosd(phi), s = sind(phi);
@@ -121,11 +128,75 @@ const Builder = (function () {
     return true;
   }
 
+  // ---------- Terrain ----------
+  // Seeded rolling hills with smaller bumps on top: like Rust, there's never a truly flat spot.
+  const TERRAIN_SIZE = 200, TERRAIN_RES = 101;
+  let terrain = null, terrainMesh = null;
+  function valueNoise(seed) {
+    const r = rng(seed);
+    const perm = Array.from({ length: 256 }, (_, i) => i);
+    for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+    const val = Array.from({ length: 256 }, () => r());
+    const h = (a, b) => val[perm[(perm[a & 255] + b) & 255]];
+    const sm = t => t * t * (3 - 2 * t);
+    return (x, z) => {
+      const xi = Math.floor(x), zi = Math.floor(z), xf = sm(x - xi), zf = sm(z - zi);
+      const a = h(xi, zi), b = h(xi + 1, zi), c = h(xi, zi + 1), d = h(xi + 1, zi + 1);
+      return a + (b - a) * xf + (c - a) * zf + (a - b - c + d) * xf * zf;
+    };
+  }
+  function fbm(n, x, z, oct) {
+    let amp = 1, f = 1, sum = 0, tot = 0;
+    for (let i = 0; i < oct; i++) { sum += amp * n(x * f, z * f); tot += amp; amp *= 0.5; f *= 2.03; }
+    return sum / tot;
+  }
+  function genTerrain(seed) {
+    const n1 = valueNoise(seed), n2 = valueNoise(seed + 101), n3 = valueNoise(seed + 202);
+    const step = TERRAIN_SIZE / (TERRAIN_RES - 1), half = TERRAIN_SIZE / 2;
+    const raw = [];
+    let min = Infinity;
+    for (let i = 0; i < TERRAIN_RES; i++) {
+      const z = -half + i * step;
+      for (let j = 0; j < TERRAIN_RES; j++) {
+        const x = -half + j * step;
+        const hgt = 10 * fbm(n1, x / 70, z / 70, 3) + 2.6 * fbm(n2, x / 19, z / 19, 2) + 0.5 * fbm(n3, x / 5, z / 5, 2);
+        raw.push(hgt);
+        min = Math.min(min, hgt);
+      }
+    }
+    return { seed, size: TERRAIN_SIZE, res: TERRAIN_RES, heights: raw.map(v => R2(v - min + 0.5)) };
+  }
+  function heightAt(x, z) {
+    const t = terrain, step = t.size / (t.res - 1), half = t.size / 2;
+    const fx = Math.max(0, Math.min(t.res - 1.001, (x + half) / step)), fz = Math.max(0, Math.min(t.res - 1.001, (z + half) / step));
+    const j = Math.floor(fx), i = Math.floor(fz), u = fx - j, v = fz - i;
+    const H = (ii, jj) => t.heights[ii * t.res + jj];
+    return H(i, j) * (1 - u) * (1 - v) + H(i, j + 1) * u * (1 - v) + H(i + 1, j) * (1 - u) * v + H(i + 1, j + 1) * u * v;
+  }
+  // Lowest and highest ground under a footprint, sampled at corners, edge midpoints, centre and in between.
+  function groundUnder(poly) {
+    const cx = poly.reduce((a, v) => a + v[0], 0) / poly.length, cz = poly.reduce((a, v) => a + v[1], 0) / poly.length;
+    const pts = [[cx, cz]];
+    poly.forEach((v, i) => {
+      const w = poly[(i + 1) % poly.length];
+      pts.push(v, [(v[0] + w[0]) / 2, (v[1] + w[1]) / 2], [(v[0] + cx) / 2, (v[1] + cz) / 2]);
+    });
+    let min = Infinity, max = -Infinity;
+    pts.forEach(([x, z]) => { const h = heightAt(x, z); min = Math.min(min, h); max = Math.max(max, h); });
+    return { min, max };
+  }
+  function setTerrain(seed) {
+    terrain = genTerrain(seed);
+    if (terrainMesh) { scene.remove(terrainMesh); terrainMesh.geometry.dispose(); }
+    terrainMesh = makeTerrain(terrain);
+    scene.add(terrainMesh);
+  }
+
   // ---------- Pieces ----------
   const viewport = $("bviewport"), canvas = $("bcanvas");
   const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   let ready = false, active = false;
-  let renderer, scene, camera, controls, root, grid, ghost = null, ghostPrefab = null;
+  let renderer, scene, camera, controls, root, ghost = null, ghostPrefab = null;
 
   const S = { pieces: new Map(), sock: new Map(), events: [], nextId: 1, alias: new Map(), undo: [], redo: [], baseT: 0, resumeAt: null, name: "" };
   const ui = { tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
@@ -133,27 +204,26 @@ const Builder = (function () {
 
   const all = () => Array.from(S.pieces.values());
   const get = k => { const id = S.sock.get(k); return id ? S.pieces.get(id) : null; };
-  const surfacesAt = L => all().filter(p => p.L === L && (L === 0 ? p.kind === "F" : p.kind === "FL"));
+  const isSurface = p => p.kind === "F" || p.kind === "FL";
   const isSolidSurface = p => !!p && (p.kind === "F" || (p.kind === "FL" && SOLID_FLOORS.has(p.prefab)));
 
   function keyOf(p) {
     switch (p.kind) {
-      case "F": return fpKey(p.cx, p.cz, 0);
-      case "FL": case "RF": return fpKey(p.cx, p.cz, p.L);
-      case "S": return "S" + fpKey(p.cx, p.cz, p.L);
-      case "W": return edgeKey(p, p.L);
-      case "D": return "D" + edgeKey(p, p.L);
-      case "FS": return "FS" + edgeKey(p, 0);
+      case "F": case "FL": case "RF": return fpKey(p.cx, p.cz, Hof(p));
+      case "S": return "S" + fpKey(p.cx, p.cz, Hof(p));
+      case "W": return edgeKey(p, Hof(p));
+      case "D": return "D" + edgeKey(p, Hof(p));
+      case "FS": return "FS" + edgeKey(p, Hof(p));
       default: return null;
     }
   }
   function posOf(p) {
     switch (p.kind) {
-      case "F": return [p.cx, 0, p.cz];
-      case "FL": case "RF": case "S": return [p.cx, 1 + 3 * p.L, p.cz];
-      case "W": case "D": return [p.mx, 1 + 3 * p.L, p.mz];
-      case "FS": return [p.mx, 0, p.mz];
-      default: return [p.x, 1 + 3 * p.L, p.z];
+      case "F": return [p.cx, p.by, p.cz];
+      case "FL": case "RF": case "S": return [p.cx, Hof(p), p.cz];
+      case "W": case "D": return [p.mx, Hof(p), p.mz];
+      case "FS": return [p.mx, p.by, p.mz];
+      default: return [p.x, Hof(p), p.z];
     }
   }
   function polyOf(p) {
@@ -165,32 +235,36 @@ const Builder = (function () {
     }
   }
   function overlapsAny(poly, filter, inset) {
-    const P = shrink(poly, inset === undefined ? 0.12 : inset);
-    return all().find(o => filter(o) && polyOverlap(P, shrink(polyOf(o), inset === undefined ? 0.12 : inset))) || null;
+    const s = inset === undefined ? 0.12 : inset;
+    const P = shrink(poly, s);
+    return all().find(o => filter(o) && polyOverlap(P, shrink(polyOf(o), s))) || null;
   }
-  const surfaceHasEdge = (K, L) => surfacesAt(L).some(s => edgesOf(s).some(e => edgeKey(e, L) === K));
-  const fullWallAt = (e, L) => { const w = get(edgeKey(e, L)); return !!(w && w.kind === "W" && FULL_WALLS.has(w.prefab)); };
+  const surfaceHasEdge = (K) => all().some(s => isSurface(s) && edgesOf(s).some(e => edgeKey(e, Hof(s)) === K));
+  const fullWallAt = (e, H) => { const w = get(edgeKey(e, H)); return !!(w && w.kind === "W" && FULL_WALLS.has(w.prefab)); };
 
   function deployOk(p) {
+    const H = Hof(p);
     const P = shrink(polyOf(p), 0.02);
-    const solids = all().filter(s => s.L === p.L && isSolidSurface(s)).map(polyOf);
-    const stairs = all().filter(s => s.L === p.L && s.kind === "S").map(polyOf);
+    const solids = all().filter(s => isSolidSurface(s) && sameH(Hof(s), H)).map(polyOf);
+    const stairs = all().filter(s => s.kind === "S" && sameH(Hof(s), H)).map(polyOf);
     return P.every(([x, z]) => solids.some(sp => pointInPoly(x, z, sp)) && !stairs.some(sp => pointInPoly(x, z, sp)));
   }
   function deployBlocked(p) {
-    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && o.L === p.L && (o.kind === "X" || o.kind === "W"), 0.005);
+    const H = Hof(p);
+    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && (o.kind === "X" || o.kind === "W") && sameH(Hof(o), H), 0.005);
     if (!hit) return null;
     return hit.kind === "W" ? "Too close to a wall" : "Overlaps the " + prefabName(hit.prefab).toLowerCase();
   }
 
   function supported(p) {
+    const H = Hof(p);
     switch (p.kind) {
       case "F": return true;
-      case "FS": return surfaceHasEdge(edgeKey(p, 0), 0);
-      case "W": return surfaceHasEdge(edgeKey(p, p.L), p.L) || (p.L > 0 && fullWallAt(p, p.L - 1));
-      case "FL": case "RF": return edgesOf(p).some(e => fullWallAt(e, p.L - 1));
-      case "S": { const s = get(fpKey(p.cx, p.cz, p.L)); return isSolidSurface(s) && s.shape === p.shape; }
-      case "D": { const w = get(edgeKey(p, p.L)); return !!(w && w.prefab === "wall.doorway"); }
+      case "FS": return surfaceHasEdge(edgeKey(p, H));
+      case "W": return surfaceHasEdge(edgeKey(p, H)) || (p.L > 0 && fullWallAt(p, H - 3));
+      case "FL": case "RF": return edgesOf(p).some(e => fullWallAt(e, H - 3));
+      case "S": { const s = get(fpKey(p.cx, p.cz, H)); return isSolidSurface(s) && s.shape === p.shape; }
+      case "D": { const w = get(edgeKey(p, H)); return !!(w && w.prefab === "wall.doorway"); }
       default: return deployOk(p);
     }
   }
@@ -199,97 +273,144 @@ const Builder = (function () {
     if (c.L > MAX_LEVEL) return "That's as high as the sandbox goes for now";
     const k = keyOf(c);
     if (k && S.sock.has(k)) return "There's already a " + prefabName(get(k).prefab).toLowerCase() + " here";
-    const poly = polyOf(c);
+    const poly = polyOf(c), H = Hof(c);
+    if (c.kind === "F") {
+      const g = groundUnder(poly);
+      if (g.max > H + 0.05) return "The ground comes up through this foundation here";
+      if (g.min < H - FOUNDATION_DEPTH) return "Too high above the ground here; the foundation won't reach";
+    }
     if (c.kind === "F" || c.kind === "FS") {
       const hit = overlapsAny(poly, o => o.kind === "F" || o.kind === "FS");
       if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
     }
     if (c.kind === "FL" || c.kind === "RF") {
-      const hit = overlapsAny(poly, o => (o.kind === "FL" || o.kind === "RF") && o.L === c.L);
+      const hit = overlapsAny(poly, o => (o.kind === "FL" || o.kind === "RF") && sameH(Hof(o), H));
       if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
-      if (overlapsAny(poly, o => o.kind === "S" && o.L === c.L - 1)) return "The stairs below need this space open";
+      if (overlapsAny(poly, o => o.kind === "S" && sameH(Hof(o), H - 3))) return "The stairs below need this space open";
     }
     if (c.kind === "S") {
-      if (get(fpKey(c.cx, c.cz, c.L + 1))) return "Stairs need an opening above; remove that floor first";
-      if (overlapsAny(poly, o => o.kind === "X" && o.L === c.L)) return "Clear the items off this floor first";
+      if (get(fpKey(c.cx, c.cz, H + 3))) return "Stairs need an opening above; remove that floor first";
+      if (overlapsAny(poly, o => o.kind === "X" && sameH(Hof(o), H))) return "Clear the items off this floor first";
     }
     if (!supported(c)) return REASON[c.kind];
     if (c.kind === "X") { const b = deployBlocked(c); if (b) return b; }
     return null;
   }
 
-  // ---------- Snapping ----------
-  function workY() {
-    const k = kindOf(ui.prefab);
-    if (k === "F" || k === "FS") return 1;
-    if (k === "FL" || k === "RF") return 1 + 3 * (ui.level + 1);
-    return 1 + 3 * ui.level;
-  }
-  function nearest(opts, pt, maxD) {
-    let best = null, bd = maxD;
-    opts.forEach(o => { const d = Math.hypot(o.px - pt.x, o.pz - pt.z); if (d < bd) { bd = d; best = o; } });
+  // ---------- Snapping (by distance on screen, since nothing is flat) ----------
+  const projV = new THREE.Vector3();
+  function nearestOnScreen(opts, sx, sy, maxPx) {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    let best = null, bd = maxPx;
+    opts.forEach(o => {
+      projV.set(o.ref[0], o.ref[1], o.ref[2]).project(camera);
+      if (projV.z > 1) return;
+      const d = Math.hypot((projV.x + 1) / 2 * w - sx, (1 - projV.y) / 2 * h - sy);
+      if (d < bd) { bd = d; best = o; }
+    });
     return best;
   }
-  const footprintOpt = f => Object.assign(f, { px: f.cx, pz: f.cz });
-  const edgeOpt = e => Object.assign({}, e, { px: e.mx, pz: e.mz });
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function setRay(sx, sy) {
+    ndc.set(sx / canvas.clientWidth * 2 - 1, -(sy / canvas.clientHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+  }
+  const shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+  function pieceUnder(sx, sy) {
+    setRay(sx, sy);
+    const hits = ray.intersectObjects(root.children, true).filter(h => h.object.isMesh && shown(h.object));
+    for (const h of hits) {
+      let o = h.object;
+      while (o && o.userData.pid === undefined) o = o.parent;
+      if (o) return { piece: S.pieces.get(o.userData.pid), point: h.point };
+    }
+    return null;
+  }
 
-  function snap(pt) {
+  function snap(sx, sy) {
     const prefab = ui.prefab, kind = kindOf(prefab), shape = SHAPE[prefab];
     let c = null;
     if (kind === "F") {
       const opts = [];
       all().forEach(f => {
         if (f.kind !== "F") return;
-        edgesOf(f).forEach(e => { const a = attach(e, shape); if (!S.sock.has(fpKey(a.cx, a.cz, 0))) opts.push(footprintOpt(a)); });
+        const top = Hof(f);
+        edgesOf(f).forEach(e => {
+          const a = attach(e, shape);
+          if (!S.sock.has(fpKey(a.cx, a.cz, top))) opts.push(Object.assign(a, { by: f.by, ref: [a.cx, top, a.cz] }));
+        });
       });
-      const best = nearest(opts, pt, shape === "sq" ? 2.2 : 1.7);
-      if (best) c = { shape, L: 0, cx: best.cx, cz: best.cz, theta: best.theta };
-      else if (shape === "sq") c = { shape, L: 0, cx: Math.floor(pt.x / 3) * 3 + 1.5, cz: Math.floor(pt.z / 3) * 3 + 1.5, theta: 0 };
-      else c = { shape, L: 0, cx: Math.round(pt.x * 4) / 4, cz: Math.round(pt.z * 4) / 4, theta: norm(ui.rot * 30) };
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { shape, L: 0, cx: best.cx, cz: best.cz, theta: best.theta, by: best.by };
+      else {
+        setRay(sx, sy);
+        const hit = terrainMesh && ray.intersectObject(terrainMesh)[0];
+        if (!hit) return null;
+        const theta = norm(ui.rot * 15);
+        const cx = R2(hit.point.x), cz = R2(hit.point.z);
+        const g = groundUnder(shapeVerts(shape, cx, cz, theta));
+        c = { shape, L: 0, cx, cz, theta, by: R2(g.max + 0.2 - 1) };
+      }
       c.rot = norm(-c.theta);
     } else if (kind === "FS") {
       const opts = [];
-      surfacesAt(0).forEach(f => edgesOf(f).forEach(e => {
-        const a = attach(e, "sq");
-        if (!get(fpKey(a.cx, a.cz, 0))) opts.push(edgeOpt(e));
-      }));
-      const best = nearest(opts, pt, 1.8);
-      if (best) c = { L: 0, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: wallRot(best.a) };
+      all().forEach(f => {
+        if (f.kind !== "F") return;
+        const top = Hof(f);
+        edgesOf(f).forEach(e => {
+          const a = attach(e, "sq");
+          if (!get(fpKey(a.cx, a.cz, top))) opts.push(Object.assign({}, e, { by: f.by, ref: [e.mx, top, e.mz] }));
+        });
+      });
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { L: 0, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: wallRot(best.a) };
     } else if (kind === "FL" || kind === "RF") {
       const L = ui.level + 1, opts = [];
-      surfacesAt(ui.level).forEach(s => { if (s.shape === shape) opts.push(footprintOpt({ cx: s.cx, cz: s.cz, theta: s.theta })); });
+      const add = (fp, by) => { const H = R2(by + 1 + 3 * L); if (!S.sock.has(fpKey(fp.cx, fp.cz, H))) opts.push(Object.assign({}, fp, { by, ref: [fp.cx, H, fp.cz] })); };
       all().forEach(o => {
-        if (o.kind === "FL" && o.L === L) edgesOf(o).forEach(e => opts.push(footprintOpt(attach(e, shape))));
+        if (isSurface(o) && o.L === ui.level && o.shape === shape) add({ cx: o.cx, cz: o.cz, theta: o.theta }, o.by);
+        if (o.kind === "FL" && o.L === L) edgesOf(o).forEach(e => add(attach(e, shape), o.by));
         if (o.kind === "W" && o.L === ui.level) {
-          opts.push(footprintOpt(attach(o, shape)));
-          opts.push(footprintOpt(attach({ mx: o.mx, mz: o.mz, a: norm(o.a + 180), nx: -o.nx, nz: -o.nz }, shape)));
+          add(attach(o, shape), o.by);
+          add(attach({ mx: o.mx, mz: o.mz, a: norm(o.a + 180), nx: -o.nx, nz: -o.nz }, shape), o.by);
         }
       });
-      const best = nearest(opts.filter(o => !S.sock.has(fpKey(o.cx, o.cz, L))), pt, 2.2);
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) {
         const extra = kind === "RF" ? ui.rot * TURN[shape] : 0;
-        c = { shape, L, cx: best.cx, cz: best.cz, theta: best.theta, rot: norm(-(best.theta + extra)) };
+        c = { shape, L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: norm(-(best.theta + extra)) };
       }
     } else if (kind === "S") {
       const L = ui.level;
-      const opts = surfacesAt(L).filter(s => isSolidSurface(s) && s.shape === shape && !S.sock.has("S" + fpKey(s.cx, s.cz, L)))
-        .map(s => footprintOpt({ cx: s.cx, cz: s.cz, theta: s.theta }));
-      const best = nearest(opts, pt, 2.2);
-      if (best) c = { shape, L, cx: best.cx, cz: best.cz, theta: best.theta, rot: norm(-(best.theta + ui.rot * TURN[shape])) };
+      const opts = all().filter(s => isSolidSurface(s) && s.L === L && s.shape === shape && !S.sock.has("S" + fpKey(s.cx, s.cz, Hof(s))))
+        .map(s => ({ cx: s.cx, cz: s.cz, theta: s.theta, by: s.by, ref: [s.cx, Hof(s), s.cz] }));
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { shape, L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: norm(-(best.theta + ui.rot * TURN[shape])) };
     } else if (kind === "W") {
       const L = ui.level, seen = new Set(), opts = [];
-      const add = e => { const k = edgeKey(e, L); if (!seen.has(k)) { seen.add(k); opts.push(edgeOpt(e)); } };
-      surfacesAt(L).forEach(s => edgesOf(s).forEach(add));
-      if (L > 0) all().forEach(o => { if (o.kind === "W" && o.L === L - 1 && FULL_WALLS.has(o.prefab)) add({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz }); });
-      const best = nearest(opts, pt, 1.8);
-      if (best) c = { L, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(wallRot(best.a) + (ui.rot % 2 ? 180 : 0)) };
+      const add = (e, by) => {
+        const H = R2(by + 1 + 3 * L), k = edgeKey(e, H);
+        if (seen.has(k)) return;
+        seen.add(k);
+        opts.push({ mx: e.mx, mz: e.mz, a: e.a, nx: e.nx, nz: e.nz, by, ref: [e.mx, H + 0.3, e.mz] });
+      };
+      all().forEach(o => {
+        if (isSurface(o) && o.L === L) edgesOf(o).forEach(e => add(e, o.by));
+        if (L > 0 && o.kind === "W" && o.L === L - 1 && FULL_WALLS.has(o.prefab)) add(o, o.by);
+      });
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(wallRot(best.a) + (ui.rot % 2 ? 180 : 0)) };
     } else if (kind === "D") {
       const L = ui.level;
-      const opts = all().filter(o => o.kind === "W" && o.L === L && o.prefab === "wall.doorway").map(o => edgeOpt({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz, rot: o.rot }));
-      const best = nearest(opts, pt, 1.8);
-      if (best) c = { L, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(best.rot + (ui.rot % 2 ? 180 : 0)) };
+      const opts = all().filter(o => o.kind === "W" && o.L === L && o.prefab === "wall.doorway")
+        .map(o => ({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz, by: o.by, rot: o.rot, ref: [o.mx, Hof(o) + 1, o.mz] }));
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(best.rot + (ui.rot % 2 ? 180 : 0)) };
     } else {
-      c = { L: ui.level, x: Math.round(pt.x * 4) / 4, z: Math.round(pt.z * 4) / 4, rot: norm(ui.rot * 90) };
+      const hit = pieceUnder(sx, sy);
+      if (hit && isSolidSurface(hit.piece) && hit.piece.L === ui.level) {
+        c = { L: ui.level, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot: norm(ui.rot * 90) };
+      }
     }
     if (!c) return null;
     Object.assign(c, { prefab, kind, grade: STRUCTURAL.has(prefab) ? "twigs" : "wood" });
@@ -456,16 +577,18 @@ const Builder = (function () {
     afterChange();
   }
 
-  // A small twig start, squares plus a triangle, so the page opens on something to build from.
+  // A small twig start, squares plus a triangle, set at a height that clears the ground under all of it.
   function seedStarter() {
-    const P = (prefab, fields) => doPlace(Object.assign({ prefab, kind: kindOf(prefab), grade: "twigs", L: 0 }, fields));
-    const F = (prefab, a) => P(prefab, { shape: SHAPE[prefab], cx: a.cx, cz: a.cz, theta: a.theta, rot: norm(-a.theta) });
-    const Wl = (prefab, e) => P(prefab, { mx: e.mx, mz: e.mz, a: e.a, nx: e.nx, nz: e.nz, rot: wallRot(e.a) });
-    const f1 = F("foundation", { cx: 1.5, cz: 1.5, theta: 0 });
-    const e1 = edgesOf(f1);
-    const f2 = F("foundation", attach(e1.find(e => e.a === 0), "sq"));
-    const e2 = edgesOf(f2);
-    F("foundation.triangle", attach(e2.find(e => Math.abs(e.mx - 6) < 0.01), "tri"));
+    const f1 = { shape: "sq", cx: 1.5, cz: 1.5, theta: 0 };
+    const f2 = attach(edgesOf(f1).find(e => e.a === 0), "sq");
+    const f3 = attach(edgesOf(f2).find(e => Math.abs(e.mx - 6) < 0.01), "tri");
+    let top = -Infinity;
+    [f1, f2, f3].forEach(f => { top = Math.max(top, groundUnder(shapeVerts(f.shape, f.cx, f.cz, f.theta)).max); });
+    const by = R2(top + 0.2 - 1);
+    const F = (prefab, f) => doPlace({ prefab, kind: "F", grade: "twigs", L: 0, by, shape: f.shape, cx: f.cx, cz: f.cz, theta: f.theta, rot: norm(-f.theta) });
+    const Wl = (prefab, e) => doPlace({ prefab, kind: kindOf(prefab), grade: "twigs", L: 0, by, mx: e.mx, mz: e.mz, a: e.a, nx: e.nx, nz: e.nz, rot: wallRot(e.a) });
+    F("foundation", f1); F("foundation", f2); F("foundation.triangle", f3);
+    const e1 = edgesOf(f1), e2 = edgesOf(f2);
     Wl("wall", e1.find(e => e.a === 270));
     Wl("wall", e1.find(e => e.a === 180));
     Wl("wall", e2.find(e => Math.abs(e.mz) < 0.01));
@@ -476,13 +599,14 @@ const Builder = (function () {
   // ---------- Persistence (this browser only) ----------
   function save() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ name: S.name, events: S.events, nextId: S.nextId, pieces: all().map(snapshot) }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ name: S.name, seed: terrain.seed, events: S.events, nextId: S.nextId, pieces: all().map(snapshot) }));
     } catch (err) { /* storage unavailable; the build still works for this visit */ }
   }
-  function restore() {
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch (err) { d = null; }
-    if (!d || !Array.isArray(d.pieces) || !d.pieces.length) return false;
+  function loadSaved() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch (err) { return null; }
+  }
+  function restore(d) {
+    if (!d || !Array.isArray(d.pieces)) return false;
     d.pieces.forEach(p => {
       S.pieces.set(p.id, p);
       const k = keyOf(p);
@@ -497,8 +621,13 @@ const Builder = (function () {
     return true;
   }
   function toLog() {
-    return { name: S.name.trim() || "Sandbox build", builder: "You", setting: "open", source: "sandbox", events: S.events.map(e => Object.assign({}, e)) };
+    return {
+      name: S.name.trim() || "Sandbox build", builder: "You", setting: "open", source: "sandbox",
+      terrain: { size: terrain.size, res: terrain.res, heights: terrain.heights },
+      events: S.events.map(e => Object.assign({}, e))
+    };
   }
+  function newSeed() { return 1 + Math.floor(Math.random() * 1e6); }
 
   // ---------- Visibility, ghost, highlight ----------
   function refreshVisibility() {
@@ -509,7 +638,6 @@ const Builder = (function () {
       if (ui.hideAbove) v = p.L <= ui.level || (placingCeiling && (p.kind === "FL" || p.kind === "RF") && p.L === ui.level + 1);
       p.mesh.visible = v;
     });
-    grid.position.y = (ui.tool === "place" ? workY() : 0) + 0.02;
   }
   const ghostOk = new THREE.MeshBasicMaterial({ color: 0x9fc48a, transparent: true, opacity: 0.45, depthWrite: false });
   const ghostBad = new THREE.MeshBasicMaterial({ color: 0xdf8a70, transparent: true, opacity: 0.45, depthWrite: false });
@@ -546,22 +674,16 @@ const Builder = (function () {
   }
 
   // ---------- Pointer ----------
-  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitPt = new THREE.Vector3();
-  function setRay(x, y) {
+  function local(clientX, clientY) {
     const r = canvas.getBoundingClientRect();
-    ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
+    return [clientX - r.left, clientY - r.top];
   }
-  const shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
-
   function updateHover() {
     if (!lastPointer) return;
-    setRay(lastPointer.x, lastPointer.y);
+    const [sx, sy] = lastPointer;
     clearHighlight();
     if (ui.tool === "place") {
-      plane.constant = -workY();
-      if (!ray.ray.intersectPlane(plane, hitPt)) { hideGhost(); hover = null; return; }
-      const c = snap(hitPt);
+      const c = snap(sx, sy);
       if (!c) {
         hideGhost();
         hover = { cand: null };
@@ -574,13 +696,8 @@ const Builder = (function () {
       if (!flashTimer) setHint(why || "Click to place " + prefabName(c.prefab).toLowerCase(), !!why);
     } else {
       hideGhost();
-      const hits = ray.intersectObjects(root.children, true).filter(h => h.object.isMesh && shown(h.object));
-      let p = null;
-      for (const h of hits) {
-        let o = h.object;
-        while (o && o.userData.pid === undefined) o = o.parent;
-        if (o) { p = S.pieces.get(o.userData.pid); break; }
-      }
+      const hit = pieceUnder(sx, sy);
+      const p = hit ? hit.piece : null;
       hover = p ? { piece: p } : null;
       if (p) highlight(p);
       if (!flashTimer) setHint(p ? toolHint(p) : idleHint(), false);
@@ -672,6 +789,35 @@ const Builder = (function () {
     $("bUpAll").textContent = "Upgrade everything to " + gradeName(g);
     updateHeader(); updateHover();
   }
+  function frameBuild() {
+    const fs = all().filter(p => p.kind === "F");
+    if (fs.length) {
+      const cx = fs.reduce((a, p) => a + p.cx, 0) / fs.length, cz = fs.reduce((a, p) => a + p.cz, 0) / fs.length;
+      const y = fs.reduce((a, p) => a + p.by, 0) / fs.length + 1;
+      controls.target.set(cx, y, cz);
+      camera.position.set(cx + 12, y + 13, cz + 17);
+    } else {
+      const y = heightAt(0, 0);
+      controls.target.set(0, y, 0);
+      camera.position.set(12, y + 14, 18);
+    }
+    controls.update();
+  }
+
+  // Two-click confirm for actions that throw the current build away.
+  function armed(btn, label, armedLabel, fn) {
+    let timer = null;
+    btn.addEventListener("click", () => {
+      if (timer || !S.pieces.size) {
+        clearTimeout(timer); timer = null;
+        btn.textContent = label;
+        fn();
+        return;
+      }
+      btn.textContent = armedLabel;
+      timer = setTimeout(() => { timer = null; btn.textContent = label; }, 3000);
+    });
+  }
 
   function buildPanels() {
     const host = $("palettes");
@@ -714,18 +860,13 @@ const Builder = (function () {
     name.value = S.name;
     name.addEventListener("input", () => { S.name = name.value; save(); });
 
-    let clearArmed = null;
-    const clearBtn = $("bClear");
-    clearBtn.addEventListener("click", () => {
-      if (clearArmed) {
-        clearTimeout(clearArmed); clearArmed = null;
-        clearBtn.textContent = "New build";
-        clearAll();
-        flash("Started a new build", true);
-        return;
-      }
-      clearBtn.textContent = "Click again to clear";
-      clearArmed = setTimeout(() => { clearArmed = null; clearBtn.textContent = "New build"; }, 3000);
+    armed($("bClear"), "New build", "Click again to clear", () => { clearAll(); flash("Started a new build on the same terrain", true); });
+    armed($("bTerrain"), "New terrain", "Click again: this clears your build", () => {
+      clearAll();
+      setTerrain(newSeed());
+      save();
+      frameBuild();
+      flash("New terrain. Point at the ground to place a foundation.", true);
     });
 
     $("bReplay").addEventListener("click", () => {
@@ -775,34 +916,36 @@ const Builder = (function () {
     renderer.outputEncoding = THREE.sRGBEncoding;
     const stage = makeStage();
     scene = stage.scene;
-    grid = stage.grid;
-    camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
-    camera.position.set(15, 15, 20);
+    stage.grid.visible = false;
+    stage.ground.visible = false;
+    scene.fog = new THREE.Fog(SKY, 55, 150);
+    camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
     controls = new THREE.OrbitControls(camera, canvas);
-    controls.target.set(4, 1, 1.5);
     controls.enableDamping = !reduceMotion;
     controls.dampingFactor = 0.1;
-    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.maxPolarAngle = Math.PI * 0.47;
     controls.minDistance = 4;
     controls.maxDistance = 90;
-    controls.update();
     root = new THREE.Group();
     scene.add(root);
 
-    if (!restore()) seedStarter();
+    const saved = loadSaved();
+    setTerrain(saved && saved.seed ? saved.seed : newSeed());
+    if (saved && Array.isArray(saved.pieces)) restore(saved); else seedStarter();
     buildPanels();
     setPrefab("foundation");
     setGrade("stone");
     afterChange();
+    frameBuild();
 
     let down = null;
-    canvas.addEventListener("pointermove", e => { lastPointer = { x: e.clientX, y: e.clientY }; if (!down) updateHover(); });
+    canvas.addEventListener("pointermove", e => { lastPointer = local(e.clientX, e.clientY); if (!down) updateHover(); });
     canvas.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY, b: e.button }; });
     canvas.addEventListener("pointerup", e => {
       const d = down; down = null;
       if (!d || d.b !== 0) return;
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return; // that was an orbit drag
-      lastPointer = { x: e.clientX, y: e.clientY };
+      lastPointer = local(e.clientX, e.clientY);
       updateHover();
       act();
     });
@@ -821,11 +964,29 @@ const Builder = (function () {
     requestAnimationFrame(tick);
   }
 
-  // Test hook: lets automated checks drive the builder without a mouse.
+  // Test hook: lets automated checks drive the builder at a world position instead of a mouse position.
   const testApi = {
-    pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L })),
+    pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by })),
     setPrefab, setLevel, setTool,
-    placeAt(x, z) { const c = snap({ x, z }); if (!c) return "no-snap"; const why = validate(c); if (why) return why; actPlace(c); return "ok"; }
+    newTerrain(seed) { clearAll(); setTerrain(seed); frameBuild(); },
+    ground: (x, z) => heightAt(x, z),
+    placeAt(x, z, y) {
+      const k = kindOf(ui.prefab);
+      const f = all().find(p => p.kind === "F");
+      if (y === undefined) {
+        const by = f ? f.by : heightAt(x, z) - 1;
+        y = k === "F" ? (f ? by + 1 : heightAt(x, z)) : by + 1 + 3 * (k === "FL" || k === "RF" ? ui.level + 1 : ui.level);
+      }
+      projV.set(x, y, z).project(camera);
+      const sx = (projV.x + 1) / 2 * canvas.clientWidth, sy = (1 - projV.y) / 2 * canvas.clientHeight;
+      lastPointer = [sx, sy];
+      const c = snap(sx, sy);
+      if (!c) return "no-snap";
+      const why = validate(c);
+      if (why) return why;
+      actPlace(c);
+      return "ok";
+    }
   };
 
   return {

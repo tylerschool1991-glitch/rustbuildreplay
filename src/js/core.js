@@ -58,7 +58,7 @@ const SOURCES = {
   },
   sandbox: {
     label: "Built in sandbox",
-    note: "Built in the BuildReplay sandbox on Rust's 3 m grid. Check the final design in the real game before relying on it."
+    note: "Built in the BuildReplay sandbox with Rust's building pieces and support rules. Check the final design in the real game before relying on it."
   },
   local: {
     label: "Your log",
