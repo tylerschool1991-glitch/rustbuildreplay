@@ -150,6 +150,22 @@ function partsFor(prefab) {
   }
 }
 
+// Solid shapes for walking into: the same as the models, except walls with openings are split into
+// boxes (jambs, lintel, sill) so the opening itself stays walkable.
+function collisionParts(prefab) {
+  const T = WALL_T;
+  switch (prefab) {
+    case "wall.doorway": return [B(0.9, 3, T, -1.05, 1.5, 0), B(0.9, 3, T, 1.05, 1.5, 0), B(1.2, 0.8, T, 0, 2.6, 0)];
+    case "wall.window": {
+      const side = (3 - WINDOW_W) / 2, top = WINDOW_BOTTOM + WINDOW_H;
+      return [B(side, 3, T, -1.5 + side / 2, 1.5, 0), B(side, 3, T, 1.5 - side / 2, 1.5, 0),
+        B(WINDOW_W, WINDOW_BOTTOM, T, 0, WINDOW_BOTTOM / 2, 0), B(WINDOW_W, 3 - top, T, 0, (3 + top) / 2, 0)];
+    }
+    case "wall.frame": return [B(0.18, 3, T, -1.41, 1.5, 0), B(0.18, 3, T, 1.41, 1.5, 0), B(2.64, 0.19, T, 0, 2.905, 0)];
+    default: return partsFor(prefab).filter(p => !p.outline);
+  }
+}
+
 const geoCache = new Map();
 function boxGeo(w, h, d) {
   const key = w + "|" + h + "|" + d;

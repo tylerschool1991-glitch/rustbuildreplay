@@ -74,7 +74,7 @@ The live site is served by GitHub Pages from the `docs/` folder (Settings → Pa
 ## Roadmap
 
 1. ~~Sandbox builder~~ – squares and triangles on shared 3 m edges with Rust support rules; every build becomes a replay.
-2. Walk mode: drop in a Rust-sized player to test doorways, stairs and crouch spots.
+2. ~~Walk mode~~ – first-person player at the measured 1.8 m / 1 m capsule; collision with every piece and item, stairs, doors and hatches (E). Speeds, jump and crouch heights are still estimates.
 3. Peek checker: highlight sightlines into the base from outside.
 4. Oxide/Carbon plugin (shelved, in `plugin/`) for importing real builds.
 5. Backend (Supabase): accounts via Discord/Steam, uploads, base pages, builder profiles.

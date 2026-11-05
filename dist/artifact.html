@@ -293,6 +293,18 @@ details.fmt p { margin: 8px 0 0; }
 .ic.glyph path { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .ic.glyph rect { stroke-width: 2.2; }
 
+/* Walk mode */
+.viewport.walking .tool-card, .viewport.walking .base-card, .viewport.walking .deploy-win, .viewport.walking .hotbar { display: none; }
+.walk-hud { position: absolute; inset: 0; pointer-events: none; }
+.crosshair { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); }
+.crosshair::before, .crosshair::after { content: ""; position: absolute; background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 2px rgba(0, 0, 0, 0.8); }
+.crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
+.crosshair::after { top: 6px; left: 0; width: 14px; height: 2px; }
+.walk-card { position: absolute; top: 12px; left: 12px; max-width: min(520px, calc(100% - 24px)); }
+.walk-card b { color: var(--fg); font-weight: 600; }
+.walk-look { color: var(--accent); }
+.walk-note { font-size: 11px; }
+
 /* Radial wheel, modelled on Rust's: cream ring, red line icons, the pointed-at segment turns red and pops out */
 :root { --wheel-cream: #efe4d8; --wheel-red: #c9442d; }
 .wheel {
@@ -438,6 +450,7 @@ details.fmt p { margin: 8px 0 0; }
           <div class="base-stats" id="bStatsLine">0 pieces · 0 items · 00:00 build</div>
           <div class="gbar" id="bGrades"></div>
           <div class="base-actions">
+            <button class="btn primary" id="bWalk" type="button" title="Walk the base as a player (V)">Walk</button>
             <button class="btn primary" id="bReplay" type="button">Watch replay</button>
             <button class="btn" id="bUpAllToggle" type="button">Upgrade all</button>
             <button class="btn" id="bCopy" type="button">Copy log</button>
@@ -472,6 +485,16 @@ details.fmt p { margin: 8px 0 0; }
           </button>
         </div>
 
+        <div class="walk-hud" id="walkHud" hidden>
+          <div class="crosshair" aria-hidden="true"></div>
+          <div class="now-card walk-card">
+            <div class="now-kicker">Walk mode · player 1.8 m tall, 1 m wide</div>
+            <div class="now-sub"><b>WASD</b> move · <b>Space</b> jump · <b>Ctrl</b> crouch · <b>Shift</b> sprint · <b>E</b> open doors and hatches · <b>Esc</b> or <b>V</b> to leave</div>
+            <div class="now-sub walk-look" id="walkLook">Click the view to look around with the mouse</div>
+            <div class="now-sub walk-note">Body size is measured from the game; speed, jump and crouch heights are estimates.</div>
+          </div>
+        </div>
+
         <div class="wheel" id="wheel" hidden>
           <svg id="wheelSvg" viewBox="-230 -230 460 460" aria-hidden="true"></svg>
           <div class="wheel-center">
@@ -488,7 +511,7 @@ details.fmt p { margin: 8px 0 0; }
           <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
         </div>
         <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above</label>
-        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · drag to orbit, scroll to zoom</p>
+        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · <b>V</b> walk · drag to orbit, scroll to zoom</p>
         <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
           <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
         </button>
@@ -1429,6 +1452,22 @@ function partsFor(prefab) {
       const boxes = c.cols && c.cols.length ? c.cols : [c.b];
       return boxes.map(([x, y, z, w, h, d]) => B(w, h, d, x, y + lift, z, m));
     }
+  }
+}
+
+// Solid shapes for walking into: the same as the models, except walls with openings are split into
+// boxes (jambs, lintel, sill) so the opening itself stays walkable.
+function collisionParts(prefab) {
+  const T = WALL_T;
+  switch (prefab) {
+    case "wall.doorway": return [B(0.9, 3, T, -1.05, 1.5, 0), B(0.9, 3, T, 1.05, 1.5, 0), B(1.2, 0.8, T, 0, 2.6, 0)];
+    case "wall.window": {
+      const side = (3 - WINDOW_W) / 2, top = WINDOW_BOTTOM + WINDOW_H;
+      return [B(side, 3, T, -1.5 + side / 2, 1.5, 0), B(side, 3, T, 1.5 - side / 2, 1.5, 0),
+        B(WINDOW_W, WINDOW_BOTTOM, T, 0, WINDOW_BOTTOM / 2, 0), B(WINDOW_W, 3 - top, T, 0, (3 + top) / 2, 0)];
+    }
+    case "wall.frame": return [B(0.18, 3, T, -1.41, 1.5, 0), B(0.18, 3, T, 1.41, 1.5, 0), B(2.64, 0.19, T, 0, 2.905, 0)];
+    default: return partsFor(prefab).filter(p => !p.outline);
   }
 }
 
@@ -2401,6 +2440,273 @@ const Viewer = (function () {
     open,
     setActive(v) { active = v; if (!v) setPlaying(false); else resize(); },
     viewport
+  };
+})();
+
+// ---------- walk.js ----------
+// Walk mode: a first-person player inside the sandbox build.
+// Body: the measured Rust player capsule, 1.8 m tall and 1 m across (radius 0.5).
+// Crouch height, eye height, step height, speeds and jump height are NOT measured yet; they are marked below.
+const Walk = (function () {
+  const PLAYER_H = 1.8, PLAYER_R = 0.5;            // measured
+  const CROUCH_H = 1.1, EYE_DROP = 0.15;           // estimate
+  const STEP_UP = 0.45;                            // estimate: highest ledge you can walk onto without jumping
+  const SPEED = { walk: 4.0, sprint: 6.5, crouch: 1.8 }; // estimate, m/s
+  const GRAVITY = 18, JUMP_V = Math.sqrt(2 * 18 * 1.05); // estimate: about a 1 m jump
+  const OPENABLE = /^(door\.|wall\.frame\.garagedoor|wall\.frame\.cell\.gate|wall\.frame\.fence\.gate|gates\.external|floor\..*hatch)/;
+
+  let on = false, opts = null, prisms = [], camera = null, keys = new Set();
+  const pos = new THREE.Vector3();
+  let vy = 0, yaw = 0, pitch = 0, grounded = false, crouch = false, locked = false, dragLook = null;
+  const open = new Map(); // piece id -> { group, pos, rot }
+
+  // ---------- Collision shapes: every part of every piece as a convex prism in world space ----------
+  function rotXZ(x, z, deg) { const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r); return [x * c + z * s, -x * s + z * c]; }
+  function planeFrom(a, b, c) {
+    // y = px * x + pz * z + k through three points
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vyy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vyy, ny = uz * vx - ux * vz, nz = ux * vyy - uy * vx;
+    if (Math.abs(ny) < 1e-9) return { px: 0, pz: 0, k: a[1] };
+    return { px: -nx / ny, pz: -nz / ny, k: a[1] + (nx * a[0] + nz * a[2]) / ny };
+  }
+  function prismsFor(piece) {
+    const out = [];
+    collisionParts(piece.prefab).forEach(pt => {
+      const toWorld = (lx, lz) => {
+        const [ax, az] = rotXZ(lx, lz, pt.ry || 0);
+        const [wx, wz] = rotXZ(ax + (pt.x || 0), az + (pt.z || 0), piece.rot || 0);
+        return [wx + piece.pos[0], wz + piece.pos[2]];
+      };
+      if (pt.poly) {
+        const pts = pt.poly.map(([x, z], i) => { const [wx, wz] = toWorld(x, z); return [wx, piece.pos[1] + (pt.y || 0) + pt.tops[i], wz]; });
+        const top = planeFrom(pts[0], pts[1], pts[2]);
+        out.push({ id: piece.id, poly: pts.map(p => [p[0], p[2]]), top, t: pt.t });
+      } else {
+        const hw = pt.w / 2, hd = pt.d / 2, y1 = piece.pos[1] + pt.y + pt.h / 2;
+        out.push({ id: piece.id, poly: [toWorld(-hw, -hd), toWorld(hw, -hd), toWorld(hw, hd), toWorld(-hw, hd)], top: { px: 0, pz: 0, k: y1 }, t: pt.h });
+      }
+    });
+    out.forEach(p => {
+      // Keep polygons counter-clockwise so edge normals point outward.
+      let area = 0;
+      for (let i = 0; i < p.poly.length; i++) { const a = p.poly[i], b = p.poly[(i + 1) % p.poly.length]; area += a[0] * b[1] - b[0] * a[1]; }
+      if (area < 0) p.poly.reverse();
+      p.prefab = piece.prefab;
+    });
+    return out;
+  }
+  const topAt = (p, x, z) => p.top.px * x + p.top.pz * z + p.top.k;
+  function inside(poly, x, z) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      if ((b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]) < 0) return false;
+    }
+    return true;
+  }
+  // Push a circle (x, z, r) out of a convex polygon; returns the correction or null.
+  function pushOut(poly, x, z, r) {
+    if (inside(poly, x, z)) {
+      let best = Infinity, nx = 0, nz = 0;
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        const ex = b[0] - a[0], ez = b[1] - a[1], len = Math.hypot(ex, ez) || 1;
+        const ox = ez / len, oz = -ex / len; // outward for counter-clockwise polygons
+        const d = (x - a[0]) * ox + (z - a[1]) * oz; // negative inside
+        if (-d < best) { best = -d; nx = ox; nz = oz; }
+      }
+      return [nx * (best + r), nz * (best + r)];
+    }
+    let bd = Infinity, qx = 0, qz = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ex = b[0] - a[0], ez = b[1] - a[1], l2 = ex * ex + ez * ez || 1;
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (z - a[1]) * ez) / l2));
+      const px = a[0] + ex * t, pz = a[1] + ez * t, d = Math.hypot(x - px, z - pz);
+      if (d < bd) { bd = d; qx = px; qz = pz; }
+    }
+    if (bd >= r) return null;
+    const k = (r - bd) / (bd || 1);
+    return [(x - qx) * k, (z - qz) * k];
+  }
+  const solid = p => !open.has(p.id);
+
+  // ---------- Physics step ----------
+  function height() { return crouch ? CROUCH_H : PLAYER_H; }
+  function step(dt) {
+    let mx = 0, mz = 0;
+    if (keys.has("w")) mz += 1;
+    if (keys.has("s")) mz -= 1;
+    if (keys.has("d")) mx += 1;
+    if (keys.has("a")) mx -= 1;
+    crouch = keys.has("control") || keys.has("c");
+    const speed = crouch ? SPEED.crouch : keys.has("shift") ? SPEED.sprint : SPEED.walk;
+    const len = Math.hypot(mx, mz);
+    if (len) {
+      mx /= len; mz /= len;
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      pos.x += (fx * mz + rx * mx) * speed * dt;
+      pos.z += (fz * mz + rz * mx) * speed * dt;
+    }
+    const H = height();
+    // Walls and anything taller than a step push the player sideways.
+    for (let iter = 0; iter < 4; iter++) {
+      let moved = false;
+      prisms.forEach(p => {
+        if (!solid(p)) return;
+        const top = topAt(p, pos.x, pos.z), bottom = top - p.t;
+        if (top <= pos.y + STEP_UP || bottom >= pos.y + H) return;
+        const fix = pushOut(p.poly, pos.x, pos.z, PLAYER_R);
+        if (fix) { pos.x += fix[0]; pos.z += fix[1]; moved = true; }
+      });
+      if (!moved) break;
+    }
+    // Ground: the highest surface under the player that's within a step of the feet.
+    let ground = opts.groundAt(pos.x, pos.z);
+    const probes = [[0, 0], [0.25, 0], [-0.25, 0], [0, 0.25], [0, -0.25]];
+    prisms.forEach(p => {
+      if (!solid(p)) return;
+      probes.forEach(([ox, oz]) => {
+        const x = pos.x + ox, z = pos.z + oz;
+        if (!inside(p.poly, x, z)) return;
+        const top = topAt(p, x, z);
+        if (top <= pos.y + STEP_UP && top > ground) ground = top;
+      });
+    });
+    vy -= GRAVITY * dt;
+    if (grounded && keys.has(" ")) { vy = JUMP_V; grounded = false; }
+    let ny = pos.y + vy * dt;
+    // Ceilings stop a jump.
+    if (vy > 0) prisms.forEach(p => {
+      if (!solid(p) || !inside(p.poly, pos.x, pos.z)) return;
+      const bottom = topAt(p, pos.x, pos.z) - p.t;
+      if (bottom >= pos.y + H - 0.01 && bottom < ny + H) { ny = bottom - H; vy = 0; }
+    });
+    if (ny <= ground) { ny = ground; vy = 0; grounded = true; }
+    else grounded = ny - ground < 0.05 && vy <= 0;
+    pos.y = ny;
+    camera.position.set(pos.x, pos.y + H - EYE_DROP, pos.z);
+    camera.rotation.set(pitch, yaw, 0, "YXZ");
+    if (opts.onMove) opts.onMove(pos, H);
+  }
+
+  // ---------- Doors and hatches (E) ----------
+  const ray = new THREE.Raycaster();
+  function useTarget() {
+    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+    ray.far = 3.5;
+    camera.updateMatrixWorld();
+    const hits = ray.intersectObjects(opts.root.children, true).filter(h => h.object.isMesh && h.object.visible !== false);
+    for (const h of hits) {
+      let o = h.object;
+      while (o && o.userData.pid === undefined) o = o.parent;
+      if (!o) continue;
+      const piece = opts.pieceById(o.userData.pid);
+      if (piece && OPENABLE.test(piece.prefab)) return piece;
+      if (piece) return null; // something solid is in the way
+    }
+    return null;
+  }
+  function toggle(piece) {
+    const g = piece.mesh;
+    if (open.has(piece.id)) {
+      const st = open.get(piece.id);
+      g.position.copy(st.pos); g.rotation.y = st.rot; g.visible = true;
+      open.delete(piece.id);
+      return;
+    }
+    open.set(piece.id, { pos: g.position.clone(), rot: g.rotation.y });
+    if (/hatch/.test(piece.prefab)) { g.visible = false; return; }
+    // Swing open 90° around the hinge edge.
+    const c = CATALOG_BY_ID[piece.prefab], half = c ? c.w / 2 : 0.6;
+    const a = -Math.PI / 2;
+    const hx = -half, ox = hx - (hx * Math.cos(a)), oz = -(-hx * Math.sin(a));
+    const r = g.rotation.y, cs = Math.cos(r), sn = Math.sin(r);
+    g.position.x += ox * cs + oz * sn;
+    g.position.z += -ox * sn + oz * cs;
+    g.rotation.y = r + a;
+  }
+
+  // ---------- Input ----------
+  function onKey(e) {
+    if (!on) return;
+    const k = e.key === " " ? " " : e.key.toLowerCase();
+    if (e.type === "keydown") {
+      if (k === "escape" || k === "v") { e.preventDefault(); stop(); return; }
+      if (k === "e" && !e.repeat) { const t = useTarget(); if (t) toggle(t); }
+      keys.add(k);
+    } else keys.delete(k);
+    if ("wasd ".indexOf(k) >= 0 || k === "control" || k === "shift" || k === "c" || k === "e") e.preventDefault();
+  }
+  function onMouse(e) {
+    if (!on) return;
+    let dx = 0, dy = 0;
+    if (locked) { dx = e.movementX; dy = e.movementY; }
+    else if (dragLook) { dx = e.clientX - dragLook[0]; dy = e.clientY - dragLook[1]; dragLook = [e.clientX, e.clientY]; }
+    else return;
+    yaw -= dx * 0.0024;
+    pitch = Math.max(-1.5, Math.min(1.5, pitch - dy * 0.0024));
+  }
+  function onDown(e) {
+    if (!on) return;
+    if (!locked && opts.canvas.requestPointerLock) {
+      try { const r = opts.canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (err) { /* fall back to drag-to-look */ }
+    }
+    if (!locked) dragLook = [e.clientX, e.clientY];
+  }
+  function onUp() { dragLook = null; }
+  function onLock() {
+    locked = document.pointerLockElement === opts.canvas;
+    if (opts.onLock) opts.onLock(locked);
+  }
+
+  function start(o) {
+    opts = o;
+    camera = new THREE.PerspectiveCamera(72, 1, 0.05, 500);
+    prisms = [];
+    o.pieces.forEach(p => { prisms.push(...prismsFor(p)); });
+    // Spawn at the first candidate spot with nothing solid in the way.
+    const clear = c => !prisms.some(p => {
+      const top = topAt(p, c.x, c.z), bottom = top - p.t;
+      return top > c.y + STEP_UP && bottom < c.y + PLAYER_H && pushOut(p.poly, c.x, c.z, PLAYER_R);
+    });
+    const spot = (o.spawnCandidates || []).find(clear) || o.spawn;
+    pos.set(spot.x, spot.y, spot.z);
+    yaw = o.spawn.yaw || 0; pitch = -0.1; vy = 0; grounded = false; keys.clear(); open.clear();
+    on = true;
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKey, true);
+    window.addEventListener("mousemove", onMouse);
+    o.canvas.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointerup", onUp);
+    document.addEventListener("pointerlockchange", onLock);
+    onDown({ clientX: 0, clientY: 0 });
+    dragLook = null;
+    step(0);
+  }
+  function stop() {
+    if (!on) return;
+    on = false;
+    // Close anything that was opened so the build is left as it was.
+    Array.from(open.keys()).forEach(id => { const p = opts.pieceById(id); if (p) toggle(p); });
+    window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("keyup", onKey, true);
+    window.removeEventListener("mousemove", onMouse);
+    opts.canvas.removeEventListener("pointerdown", onDown);
+    window.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointerlockchange", onLock);
+    if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+    keys.clear();
+    if (opts.onExit) opts.onExit();
+  }
+
+  return {
+    start, stop,
+    active: () => on,
+    update(dt) { if (on) step(Math.min(dt, 0.05)); },
+    camera: () => camera,
+    resize(w, h) { if (camera) { camera.aspect = w / h; camera.updateProjectionMatrix(); } },
+    // For automated checks.
+    test: { pos: () => pos.clone(), teleport(x, y, z) { pos.set(x, y, z); vy = 0; }, sim(seconds) { for (let i = 0; i < seconds * 60; i++) step(1 / 60); }, press(k) { keys.add(k); }, release(k) { keys.delete(k); }, setYaw(v) { yaw = v; }, use() { const t = useTarget(); if (t) toggle(t); return t ? t.prefab : null; }, isOpen: id => open.has(id) }
   };
 })();
 
@@ -3412,6 +3718,48 @@ const Builder = (function () {
     controls.update();
   }
 
+  // ---------- Walk mode ----------
+  function surfaceTopAt(x, z) {
+    // The lowest foundation or floor top under a point (where you'd stand on entering), else the ground.
+    let best = null;
+    all().forEach(p => {
+      if (!isSolidSurface(p) && p.kind !== "FL") return;
+      if (!pointInPoly(x, z, polyOf(p))) return;
+      const top = Hof(p) + (p.kind === "FL" ? FLOOR_T / 2 : 0);
+      if (best === null || top < best) best = top;
+    });
+    return best === null ? heightAt(x, z) : best;
+  }
+  function startWalk() {
+    if (Walk.active()) return;
+    closeWheel(false);
+    hideGhost(); clearHighlight();
+    const t = controls.target, dx = t.x - camera.position.x, dz = t.z - camera.position.z;
+    all().forEach(p => { p.mesh.visible = true; });
+    viewport.classList.add("walking");
+    $("walkHud").hidden = false;
+    Walk.start({
+      pieces: all().map(p => ({ id: p.id, prefab: p.prefab, pos: p.pos, rot: p.rot })),
+      groundAt: heightAt,
+      spawn: { x: t.x, z: t.z, y: surfaceTopAt(t.x, t.z), yaw: Math.atan2(-dx, -dz) },
+      // Prefer standing inside the base: the spot in view, then each ground-floor surface, nearest first.
+      spawnCandidates: [{ x: t.x, z: t.z, y: surfaceTopAt(t.x, t.z) }].concat(
+        all().filter(p => (p.kind === "F" || (p.kind === "FL" && SOLID_FLOORS.has(p.prefab))) && p.L === ui.level)
+          .sort((a, b) => Math.hypot(a.cx - t.x, a.cz - t.z) - Math.hypot(b.cx - t.x, b.cz - t.z))
+          .map(p => ({ x: p.cx, z: p.cz, y: Hof(p) + (p.kind === "FL" ? FLOOR_T / 2 : 0) }))),
+      canvas, root,
+      pieceById: id => S.pieces.get(id),
+      onLock: locked => { $("walkLook").hidden = locked; },
+      onExit: () => {
+        viewport.classList.remove("walking");
+        $("walkHud").hidden = true;
+        refreshVisibility();
+        updateHover();
+      }
+    });
+    Walk.resize(viewport.clientWidth, viewport.clientHeight);
+  }
+
   // Two-click confirm for actions that throw the current build away.
   function armed(btn, label, armedLabel, fn) {
     let timer = null;
@@ -3512,6 +3860,7 @@ const Builder = (function () {
       flash("New terrain. Point at the ground to place a foundation.", true);
     });
 
+    $("bWalk").addEventListener("click", startWalk);
     $("bReplay").addEventListener("click", () => {
       if (!S.events.length) return flash("Build something first, then watch it back");
       openLocalLog(toLog());
@@ -3538,7 +3887,8 @@ const Builder = (function () {
     viewport.addEventListener("contextmenu", e => e.preventDefault());
 
     document.addEventListener("keydown", e => {
-      if (!active) return;
+      if (!active || Walk.active()) return;
+      if (e.key.toLowerCase() === "v" && !e.target.closest("input, select, textarea") && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startWalk(); return; }
       if (e.target.closest("input, select, textarea")) return;
       const k = e.key.toLowerCase();
       if (k === "escape" && W.open) { closeWheel(false); return; }
@@ -3559,6 +3909,7 @@ const Builder = (function () {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    Walk.resize(w, h);
   }
   function init() {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -3592,8 +3943,9 @@ const Builder = (function () {
     frameBuild();
 
     let down = null;
-    canvas.addEventListener("pointermove", e => { lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
+    canvas.addEventListener("pointermove", e => { if (Walk.active()) return; lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
     canvas.addEventListener("pointerdown", e => {
+      if (Walk.active()) return;
       if (W.open) { e.preventDefault(); closeWheel(false); return; }
       if (e.button === 2) {
         e.preventDefault();
@@ -3604,6 +3956,7 @@ const Builder = (function () {
       down = { x: e.clientX, y: e.clientY, b: e.button };
     });
     canvas.addEventListener("pointerup", e => {
+      if (Walk.active()) return;
       const d = down; down = null;
       if (!d || d.b !== 0) return;
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return; // that was an orbit drag
@@ -3624,21 +3977,26 @@ const Builder = (function () {
       if (quick && !W.hovered) { W.sticky = true; return; } // a quick right-click leaves it open for clicking
       closeWheel(true);
     });
-    canvas.addEventListener("pointerleave", () => { if (!W.open) { hideGhost(); clearHighlight(); hover = null; } });
+    canvas.addEventListener("pointerleave", () => { if (!W.open && !Walk.active()) { hideGhost(); clearHighlight(); hover = null; } });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
     window.addEventListener("resize", resize);
     requestAnimationFrame(tick);
     ready = true;
   }
-  const fly = makeFlyKeys(() => active && !W.open);
+  const fly = makeFlyKeys(() => active && !W.open && !Walk.active());
   let lastFrame = performance.now();
   function tick(now) {
     const dt = Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
     if (active) {
-      if (fly.step(dt, camera, controls)) updateHover();
-      controls.update();
-      renderer.render(scene, camera);
+      if (Walk.active()) {
+        Walk.update(dt);
+        renderer.render(scene, Walk.camera());
+      } else {
+        if (fly.step(dt, camera, controls)) updateHover();
+        controls.update();
+        renderer.render(scene, camera);
+      }
     }
     requestAnimationFrame(tick);
   }
@@ -3648,7 +4006,7 @@ const Builder = (function () {
     pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by })),
     setPrefab(prefab) { if (CATALOG_BY_ID[prefab]) { pickDeployable(prefab); selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
     setHammer(id) { ui.hammer = id; selectSlot("hammer"); },
-    setLevel, selectSlot,
+    setLevel, selectSlot, startWalk,
     state: () => ({ slot: ui.slot, tool: ui.tool, prefab: ui.prefab, grade: ui.grade, hammer: ui.hammer }),
     newTerrain(seed) { clearAll(); setTerrain(seed); frameBuild(); },
     ground: (x, z) => heightAt(x, z),
@@ -3677,6 +4035,7 @@ const Builder = (function () {
       if (v && !ready) init();
       if (v) { setXray(false); setRockGhost(false); resize(); updateStats(); }
       if (!v && W.open) closeWheel(false);
+      if (!v && Walk.active()) Walk.stop();
     },
     test: testApi
   };
@@ -3886,6 +4245,7 @@ function route() {
   });
 
   window.BuildReplayTest = Builder.test; // used by automated checks
+  window.BuildReplayWalk = Walk.test;
   window.addEventListener("hashchange", route);
   route();
 })();

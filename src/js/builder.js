@@ -1005,6 +1005,48 @@ const Builder = (function () {
     controls.update();
   }
 
+  // ---------- Walk mode ----------
+  function surfaceTopAt(x, z) {
+    // The lowest foundation or floor top under a point (where you'd stand on entering), else the ground.
+    let best = null;
+    all().forEach(p => {
+      if (!isSolidSurface(p) && p.kind !== "FL") return;
+      if (!pointInPoly(x, z, polyOf(p))) return;
+      const top = Hof(p) + (p.kind === "FL" ? FLOOR_T / 2 : 0);
+      if (best === null || top < best) best = top;
+    });
+    return best === null ? heightAt(x, z) : best;
+  }
+  function startWalk() {
+    if (Walk.active()) return;
+    closeWheel(false);
+    hideGhost(); clearHighlight();
+    const t = controls.target, dx = t.x - camera.position.x, dz = t.z - camera.position.z;
+    all().forEach(p => { p.mesh.visible = true; });
+    viewport.classList.add("walking");
+    $("walkHud").hidden = false;
+    Walk.start({
+      pieces: all().map(p => ({ id: p.id, prefab: p.prefab, pos: p.pos, rot: p.rot })),
+      groundAt: heightAt,
+      spawn: { x: t.x, z: t.z, y: surfaceTopAt(t.x, t.z), yaw: Math.atan2(-dx, -dz) },
+      // Prefer standing inside the base: the spot in view, then each ground-floor surface, nearest first.
+      spawnCandidates: [{ x: t.x, z: t.z, y: surfaceTopAt(t.x, t.z) }].concat(
+        all().filter(p => (p.kind === "F" || (p.kind === "FL" && SOLID_FLOORS.has(p.prefab))) && p.L === ui.level)
+          .sort((a, b) => Math.hypot(a.cx - t.x, a.cz - t.z) - Math.hypot(b.cx - t.x, b.cz - t.z))
+          .map(p => ({ x: p.cx, z: p.cz, y: Hof(p) + (p.kind === "FL" ? FLOOR_T / 2 : 0) }))),
+      canvas, root,
+      pieceById: id => S.pieces.get(id),
+      onLock: locked => { $("walkLook").hidden = locked; },
+      onExit: () => {
+        viewport.classList.remove("walking");
+        $("walkHud").hidden = true;
+        refreshVisibility();
+        updateHover();
+      }
+    });
+    Walk.resize(viewport.clientWidth, viewport.clientHeight);
+  }
+
   // Two-click confirm for actions that throw the current build away.
   function armed(btn, label, armedLabel, fn) {
     let timer = null;
@@ -1105,6 +1147,7 @@ const Builder = (function () {
       flash("New terrain. Point at the ground to place a foundation.", true);
     });
 
+    $("bWalk").addEventListener("click", startWalk);
     $("bReplay").addEventListener("click", () => {
       if (!S.events.length) return flash("Build something first, then watch it back");
       openLocalLog(toLog());
@@ -1131,7 +1174,8 @@ const Builder = (function () {
     viewport.addEventListener("contextmenu", e => e.preventDefault());
 
     document.addEventListener("keydown", e => {
-      if (!active) return;
+      if (!active || Walk.active()) return;
+      if (e.key.toLowerCase() === "v" && !e.target.closest("input, select, textarea") && !e.ctrlKey && !e.metaKey) { e.preventDefault(); startWalk(); return; }
       if (e.target.closest("input, select, textarea")) return;
       const k = e.key.toLowerCase();
       if (k === "escape" && W.open) { closeWheel(false); return; }
@@ -1152,6 +1196,7 @@ const Builder = (function () {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    Walk.resize(w, h);
   }
   function init() {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -1185,8 +1230,9 @@ const Builder = (function () {
     frameBuild();
 
     let down = null;
-    canvas.addEventListener("pointermove", e => { lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
+    canvas.addEventListener("pointermove", e => { if (Walk.active()) return; lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
     canvas.addEventListener("pointerdown", e => {
+      if (Walk.active()) return;
       if (W.open) { e.preventDefault(); closeWheel(false); return; }
       if (e.button === 2) {
         e.preventDefault();
@@ -1197,6 +1243,7 @@ const Builder = (function () {
       down = { x: e.clientX, y: e.clientY, b: e.button };
     });
     canvas.addEventListener("pointerup", e => {
+      if (Walk.active()) return;
       const d = down; down = null;
       if (!d || d.b !== 0) return;
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return; // that was an orbit drag
@@ -1217,21 +1264,26 @@ const Builder = (function () {
       if (quick && !W.hovered) { W.sticky = true; return; } // a quick right-click leaves it open for clicking
       closeWheel(true);
     });
-    canvas.addEventListener("pointerleave", () => { if (!W.open) { hideGhost(); clearHighlight(); hover = null; } });
+    canvas.addEventListener("pointerleave", () => { if (!W.open && !Walk.active()) { hideGhost(); clearHighlight(); hover = null; } });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
     window.addEventListener("resize", resize);
     requestAnimationFrame(tick);
     ready = true;
   }
-  const fly = makeFlyKeys(() => active && !W.open);
+  const fly = makeFlyKeys(() => active && !W.open && !Walk.active());
   let lastFrame = performance.now();
   function tick(now) {
     const dt = Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
     if (active) {
-      if (fly.step(dt, camera, controls)) updateHover();
-      controls.update();
-      renderer.render(scene, camera);
+      if (Walk.active()) {
+        Walk.update(dt);
+        renderer.render(scene, Walk.camera());
+      } else {
+        if (fly.step(dt, camera, controls)) updateHover();
+        controls.update();
+        renderer.render(scene, camera);
+      }
     }
     requestAnimationFrame(tick);
   }
@@ -1241,7 +1293,7 @@ const Builder = (function () {
     pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by })),
     setPrefab(prefab) { if (CATALOG_BY_ID[prefab]) { pickDeployable(prefab); selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
     setHammer(id) { ui.hammer = id; selectSlot("hammer"); },
-    setLevel, selectSlot,
+    setLevel, selectSlot, startWalk,
     state: () => ({ slot: ui.slot, tool: ui.tool, prefab: ui.prefab, grade: ui.grade, hammer: ui.hammer }),
     newTerrain(seed) { clearAll(); setTerrain(seed); frameBuild(); },
     ground: (x, z) => heightAt(x, z),
@@ -1270,6 +1322,7 @@ const Builder = (function () {
       if (v && !ready) init();
       if (v) { setXray(false); setRockGhost(false); resize(); updateStats(); }
       if (!v && W.open) closeWheel(false);
+      if (!v && Walk.active()) Walk.stop();
     },
     test: testApi
   };

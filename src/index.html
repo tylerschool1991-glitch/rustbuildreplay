@@ -88,6 +88,7 @@
           <div class="base-stats" id="bStatsLine">0 pieces · 0 items · 00:00 build</div>
           <div class="gbar" id="bGrades"></div>
           <div class="base-actions">
+            <button class="btn primary" id="bWalk" type="button" title="Walk the base as a player (V)">Walk</button>
             <button class="btn primary" id="bReplay" type="button">Watch replay</button>
             <button class="btn" id="bUpAllToggle" type="button">Upgrade all</button>
             <button class="btn" id="bCopy" type="button">Copy log</button>
@@ -122,6 +123,16 @@
           </button>
         </div>
 
+        <div class="walk-hud" id="walkHud" hidden>
+          <div class="crosshair" aria-hidden="true"></div>
+          <div class="now-card walk-card">
+            <div class="now-kicker">Walk mode · player 1.8 m tall, 1 m wide</div>
+            <div class="now-sub"><b>WASD</b> move · <b>Space</b> jump · <b>Ctrl</b> crouch · <b>Shift</b> sprint · <b>E</b> open doors and hatches · <b>Esc</b> or <b>V</b> to leave</div>
+            <div class="now-sub walk-look" id="walkLook">Click the view to look around with the mouse</div>
+            <div class="now-sub walk-note">Body size is measured from the game; speed, jump and crouch heights are estimates.</div>
+          </div>
+        </div>
+
         <div class="wheel" id="wheel" hidden>
           <svg id="wheelSvg" viewBox="-230 -230 460 460" aria-hidden="true"></svg>
           <div class="wheel-center">
@@ -138,7 +149,7 @@
           <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
         </div>
         <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above</label>
-        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · drag to orbit, scroll to zoom</p>
+        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · <b>V</b> walk · drag to orbit, scroll to zoom</p>
         <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
           <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
         </button>

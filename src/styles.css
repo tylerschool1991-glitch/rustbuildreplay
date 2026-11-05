@@ -287,6 +287,18 @@ details.fmt p { margin: 8px 0 0; }
 .ic.glyph path { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .ic.glyph rect { stroke-width: 2.2; }
 
+/* Walk mode */
+.viewport.walking .tool-card, .viewport.walking .base-card, .viewport.walking .deploy-win, .viewport.walking .hotbar { display: none; }
+.walk-hud { position: absolute; inset: 0; pointer-events: none; }
+.crosshair { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%); }
+.crosshair::before, .crosshair::after { content: ""; position: absolute; background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 2px rgba(0, 0, 0, 0.8); }
+.crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
+.crosshair::after { top: 6px; left: 0; width: 14px; height: 2px; }
+.walk-card { position: absolute; top: 12px; left: 12px; max-width: min(520px, calc(100% - 24px)); }
+.walk-card b { color: var(--fg); font-weight: 600; }
+.walk-look { color: var(--accent); }
+.walk-note { font-size: 11px; }
+
 /* Radial wheel, modelled on Rust's: cream ring, red line icons, the pointed-at segment turns red and pops out */
 :root { --wheel-cream: #efe4d8; --wheel-red: #c9442d; }
 .wheel {
