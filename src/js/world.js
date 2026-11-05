@@ -104,8 +104,11 @@ function partsFor(prefab) {
     case "foundation": return [B(3, FOUNDATION_DEPTH_M, 3, 0, 1 - FOUNDATION_DEPTH_M / 2, 0)];
     case "foundation.triangle": return [SLAB(TRI, 1, FOUNDATION_DEPTH_M)];
     case "foundation.steps": {
-      // Attached to a foundation edge; steps lead outward along local +z.
-      return [0.75, 0.5, 0.25].map((top, k) => B(3, top + 1, 0.5, 0, (top - 1) / 2, 0.25 + 0.5 * k));
+      // Measured: 1.5 m wide and 3 m long, centred on a foundation edge and leading outward along local +z;
+      // the top step is level with the foundation (local y 1) and the far end is 1.4 m lower.
+      const p = [];
+      for (let k = 0; k < 6; k++) { const top = 1 - 1.4 * k / 6; p.push(B(1.5, top + 0.6, 0.5, 0, (top - 0.6) / 2, 0.25 + 0.5 * k)); }
+      return p;
     }
     case "wall": return [B(3, 3, WALL_T, 0, 1.5, 0)];
     case "wall.doorway": return [WALLX(DOORWAY_OUTLINE)];
@@ -118,9 +121,10 @@ function partsFor(prefab) {
     // Measured: 0.2 m borders centred 1.42 m out.
     case "floor.frame": return [B(3, FLOOR_T, 0.2, 0, 0, -1.42), B(3, FLOOR_T, 0.2, 0, 0, 1.42), B(0.2, FLOOR_T, 2.64, -1.42, 0, 0), B(0.2, FLOOR_T, 2.64, 1.42, 0, 0)];
     case "floor.triangle.frame": return triFrameBars(0, FLOOR_T);
-    // Roofs: a sloped slab rising toward local +z (square) or toward the far corner (triangle). Shapes are approximate.
-    case "roof": return [SLAB(SQUARE, [0.25, 0.25, 1.75, 1.75], 0.25)];
-    case "roof.triangle": return [SLAB(TRI, [1.75, 0.25, 0.25], 0.25)];
+    // Roofs (measured sockets): the low edge stands on a wall socket and the roof rises 3 m across it,
+    // to the far edge (square, local +z) or the far corner (triangle, local -z).
+    case "roof": return [SLAB(SQUARE, [0, 0, 3, 3], 0.2)];
+    case "roof.triangle": return [SLAB(TRI, [3, 0, 0], 0.2)];
     // U-shaped: first flight up the left half to a landing across the back, second flight back down the right half.
     case "block.stair.ushape":
       return flight(-0.76, 1.48, -1.5, 1, 0.25, 8, 0, 0.1875)
@@ -136,7 +140,8 @@ function partsFor(prefab) {
     // Spiral stairs measure 1.51 m tall: each piece climbs half a storey, and two stack per floor.
     case "block.stair.spiral": return spiralTreads(0.16, 1.42, 8, 180, SPIRAL_RISE, 0.32);
     case "block.stair.spiral.triangle": return spiralTreads(0.1, 0.8, 7, 170, SPIRAL_RISE, 0.2);
-    case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
+    // Measured sockets: a ramp climbs 0.75 m over its 3 m.
+    case "ramp": return [SLAB(SQUARE, [0, 0, 0.75, 0.75], 0.2)];
     default: {
       // Deployables: their measured collision boxes (or bounds), placed by how the item mounts.
       const c = CATALOG_BY_ID[prefab];
@@ -244,7 +249,7 @@ function makePiece(e, y0) {
 const ICON_PARTS = {
   "foundation": [B(3, 1.4, 3, 0, 0.7, 0)],
   "foundation.triangle": [SLAB(TRI, 1.4, 1.4)],
-  "foundation.steps": [B(3, 1.4, 3, 0, 0.7, -1.5), ...[0.75, 0.5, 0.25].map((top, k) => B(3, top * 1.4, 0.5, 0, top * 0.7, 0.25 + 0.5 * k))],
+  "foundation.steps": [B(3, 1.4, 3, 0, 0.7, -1.5), ...[1, 0.8, 0.6, 0.4, 0.2].map((top, k) => B(1.5, top * 1.4, 0.6, 0, top * 0.7, 0.3 + 0.6 * k))],
   "floor": [B(3, 0.3, 3, 0, 0.15, 0)],
   "wall.doorway": [B(0.9, 3, 0.25, -1.05, 1.5, 0), B(0.9, 3, 0.25, 1.05, 1.5, 0), B(1.2, 0.8, 0.25, 0, 2.6, 0)],
   "wall.window": [B(1, 3, 0.25, -1, 1.5, 0), B(1, 3, 0.25, 1, 1.5, 0), B(1, 1.2, 0.25, 0, 0.6, 0), B(1, 0.9, 0.25, 0, 2.55, 0)],
