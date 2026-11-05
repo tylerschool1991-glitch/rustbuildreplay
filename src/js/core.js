@@ -15,7 +15,11 @@ const PREFAB_NAMES = {
   "wall": "Wall",
   "wall.doorway": "Doorway",
   "wall.window": "Window Wall",
+  "wall.half": "Half Wall",
+  "wall.low": "Low Wall",
+  "wall.frame": "Wall Frame",
   "floor": "Floor",
+  "floor.frame": "Floor Frame",
   "block.stair.ushape": "U-Shaped Stairs",
   "door.hinged.metal": "Sheet Metal Door",
   "cupboard.tool.deployed": "Tool Cupboard",
@@ -23,8 +27,8 @@ const PREFAB_NAMES = {
   "furnace": "Furnace",
   "sleepingbag_leather_deployed": "Sleeping Bag"
 };
-const STRUCTURAL = new Set(["foundation", "wall", "wall.doorway", "wall.window", "floor", "block.stair.ushape"]);
-const WALLS = new Set(["wall", "wall.doorway", "wall.window"]);
+const STRUCTURAL = new Set(["foundation", "wall", "wall.doorway", "wall.window", "wall.half", "wall.low", "wall.frame", "floor", "floor.frame", "block.stair.ushape"]);
+const WALLS = new Set(["wall", "wall.doorway", "wall.window", "wall.half", "wall.low", "wall.frame"]);
 const LEVEL_NAMES = ["Ground floor", "2nd floor", "3rd floor", "4th floor", "5th floor", "6th floor"];
 
 const SETTINGS = { open: "Open ground", rock: "Rock", cave: "Cave", cliff: "Cliff" };
@@ -99,8 +103,9 @@ function stateAt(events, k) {
   const state = new Map();
   for (let i = 0; i < k; i++) {
     const e = events[i];
-    if (e.op === "place") state.set(e.id, { present: true, grade: e.grade, prefab: e.prefab, pos: e.pos });
+    if (e.op === "place") state.set(e.id, { present: true, grade: e.grade, prefab: e.prefab, pos: e.pos, rot: e.rot || 0 });
     else if (e.op === "upgrade") { const s = state.get(e.id); if (s) s.grade = e.grade; }
+    else if (e.op === "rotate") { const s = state.get(e.id); if (s) s.rot = e.rot || 0; }
     else if (e.op === "remove") { const s = state.get(e.id); if (s) s.present = false; }
   }
   return state;

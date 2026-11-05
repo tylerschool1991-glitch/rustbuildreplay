@@ -22,7 +22,7 @@ function validate(log) {
   for (let i = 0; i < log.events.length; i++) {
     const e = log.events[i];
     if (!e || typeof e.t !== "number") return "events[" + i + "] is missing a numeric \"t\".";
-    if (["place", "upgrade", "remove"].indexOf(e.op) < 0) return "events[" + i + "] has op \"" + e.op + "\"; use place, upgrade or remove.";
+    if (["place", "upgrade", "rotate", "remove"].indexOf(e.op) < 0) return "events[" + i + "] has op \"" + e.op + "\"; use place, upgrade, rotate or remove.";
     if (e.id === undefined) return "events[" + i + "] is missing \"id\".";
     if (e.op === "place") {
       if (!e.prefab) return "events[" + i + "] is missing \"prefab\".";

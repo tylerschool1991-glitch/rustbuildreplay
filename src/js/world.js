@@ -48,7 +48,11 @@ function partsFor(prefab) {
     case "wall": return [B(3, 3, 0.25, 0, 1.5, 0)];
     case "wall.doorway": return [B(0.9, 3, 0.25, -1.05, 1.5, 0), B(0.9, 3, 0.25, 1.05, 1.5, 0), B(1.2, 0.8, 0.25, 0, 2.6, 0)];
     case "wall.window": return [B(1, 3, 0.25, -1, 1.5, 0), B(1, 3, 0.25, 1, 1.5, 0), B(1, 1.2, 0.25, 0, 0.6, 0), B(1, 0.9, 0.25, 0, 2.55, 0)];
+    case "wall.half": return [B(3, 1.5, 0.25, 0, 0.75, 0)];
+    case "wall.low": return [B(3, 1, 0.25, 0, 0.5, 0)];
+    case "wall.frame": return [B(0.3, 3, 0.25, -1.35, 1.5, 0), B(0.3, 3, 0.25, 1.35, 1.5, 0), B(2.4, 0.3, 0.25, 0, 2.85, 0)];
     case "floor": return [B(3, 0.2, 3, 0, -0.1, 0)];
+    case "floor.frame": return [B(3, 0.2, 0.3, 0, -0.1, -1.35), B(3, 0.2, 0.3, 0, -0.1, 1.35), B(0.3, 0.2, 2.4, -1.35, -0.1, 0), B(0.3, 0.2, 2.4, 1.35, -0.1, 0)];
     case "block.stair.ushape": {
       const p = [];
       for (let k = 0; k < 6; k++) { const h = 0.25 * (k + 1); p.push(B(1.4, h, 0.4, -0.75, h / 2, -1.25 + 0.4 * k)); }
@@ -197,6 +201,7 @@ function applyPieces(world, state, maxLevel) {
     const present = !!(s && s.present);
     if (present) up++;
     pc.group.visible = present && pc.level <= maxLevel;
+    if (present) pc.group.rotation.y = (s.rot || 0) * Math.PI / 180;
     if (present && pc.structural) {
       const m = MATS[s.grade] || MATS.twigs;
       pc.group.children.forEach(ch => { if (ch.isMesh) ch.material = m; });

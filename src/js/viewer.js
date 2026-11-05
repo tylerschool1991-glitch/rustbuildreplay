@@ -58,6 +58,9 @@ const Viewer = (function () {
       } else if (e.op === "upgrade") {
         label = "Upgraded " + prefabName(meta.prefab) + " to " + gradeName(e.grade);
         meta.grade = e.grade; opClass = "upgrade"; glyph = "↑";
+      } else if (e.op === "rotate") {
+        label = "Rotated " + prefabName(meta.prefab);
+        opClass = "upgrade"; glyph = "↻";
       } else {
         label = "Demolished " + gradeName(meta.grade) + " " + prefabName(meta.prefab);
         opClass = "remove"; glyph = "×";

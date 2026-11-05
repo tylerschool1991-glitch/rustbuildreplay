@@ -29,6 +29,8 @@ src/
 build.mjs           bundles src/ into dist/
 dist/
   index.html        deployable single-file site
+plugin/
+  BuildReplay.cs    Oxide/Carbon server plugin that records builds (see plugin/README.md)
 ```
 
 ## Build and run
@@ -53,20 +55,21 @@ Then open `dist/index.html` in a browser, or deploy the `dist/` folder to Netlif
   "events": [
     { "t": 4.2, "op": "place", "id": 1, "prefab": "foundation", "grade": "twigs", "pos": [0, 0, 0], "rot": 0 },
     { "t": 61.0, "op": "upgrade", "id": 1, "grade": "stone" },
+    { "t": 64.3, "op": "rotate", "id": 1, "rot": 90 },
     { "t": 75.5, "op": "remove", "id": 1 }
   ]
 }
 ```
 
 - `t` seconds since recording started; `pos` metres; `rot` yaw in degrees.
-- `op`: `place`, `upgrade`, `remove`.
+- `op`: `place`, `upgrade`, `rotate`, `remove`.
 - Grades: `twigs`, `wood`, `stone`, `metal`, `toptier`.
 - `terrain.heights` is row-major, `res × res`, rows along z starting at `-size/2`.
 - `setting`: `open`, `rock`, `cave`, `cliff`. `source`: `recorded`, `copypaste`.
 
 ## Roadmap
 
-1. Oxide/Carbon plugin: `/rec start`, `/rec stop`, writes this log format including nearby terrain and formations.
+1. ~~Oxide/Carbon plugin~~ – first version in `plugin/`; next: calibrate on a test server, capture rock/cave formations.
 2. Backend (Supabase): accounts via Discord/Steam, uploads, base pages, builder profiles.
 3. CopyPaste import on upload, with auto-ordering.
 4. More formation models, deployables and electrical.
