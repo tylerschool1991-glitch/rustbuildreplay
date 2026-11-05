@@ -10,7 +10,7 @@ namespace Oxide.Plugins
     // Run `brmeasure` in the server console. It reads (without spawning anything into the world) the exact
     // bounds and collision boxes of every deployable item and every building-core prefab, and writes them to
     // oxide/data/BuildReplay/measurements.json (carbon/data/... on Carbon). Send that file back to be imported.
-    [Info("BuildReplayMeasure", "BuildReplay", "0.2.0")]
+    [Info("BuildReplayMeasure", "BuildReplay", "0.3.0")]
     [Description("Dumps exact sizes of deployables and building pieces for the BuildReplay sandbox.")]
     public class BuildReplayMeasure : RustPlugin
     {
@@ -34,6 +34,17 @@ namespace Oxide.Plugins
             public Dictionary<string, List<Box>> gradeColliders;
         }
 
+        // The exact shape of a mesh collider: vertices in the prefab root's local space, plus triangles.
+        private class MeshShape
+        {
+            public string prefab;
+            public string grade;
+            public string name;
+            public bool readable;
+            public List<float[]> vertices = new List<float[]>();
+            public List<int> triangles = new List<int>();
+        }
+
         private class Output
         {
             public string format = "build-replay-measurements/1";
@@ -43,6 +54,7 @@ namespace Oxide.Plugins
             public List<Entry> building = new List<Entry>();
             public List<Entry> player = new List<Entry>();
             public List<string> searched = new List<string>();
+            public List<MeshShape> meshes = new List<MeshShape>();
             public List<string> errors = new List<string>();
         }
 
@@ -104,7 +116,7 @@ namespace Oxide.Plugins
                     var entry = Measure(go, path);
                     if (isPlayer) { output.player.Add(entry); continue; }
                     if (go.GetComponent<BuildingBlock>() == null) continue; // skins and helpers, not pieces
-                    entry.gradeColliders = MeasureGrades(go, output.errors);
+                    entry.gradeColliders = MeasureGrades(go, output.errors, output.meshes, entry.prefab);
                     output.building.Add(entry);
                     seenPaths.Add(path);
                 }
@@ -169,9 +181,26 @@ namespace Oxide.Plugins
             return list;
         }
 
+        private void DumpMeshes(GameObject skin, string prefab, string grade, List<MeshShape> meshes, List<string> errors)
+        {
+            foreach (var mc in skin.GetComponentsInChildren<MeshCollider>(true))
+            {
+                if (mc.isTrigger || mc.sharedMesh == null) continue;
+                var shape = new MeshShape { prefab = prefab, grade = grade, name = mc.gameObject.name, readable = mc.sharedMesh.isReadable };
+                try
+                {
+                    var verts = mc.sharedMesh.vertices;
+                    foreach (var v in verts) shape.vertices.Add(V(skin.transform.InverseTransformPoint(mc.transform.TransformPoint(v))));
+                    shape.triangles.AddRange(mc.sharedMesh.triangles);
+                }
+                catch (Exception ex) { errors.Add(prefab + " mesh " + mc.gameObject.name + ": " + ex.Message); }
+                meshes.Add(shape);
+            }
+        }
+
         // Building blocks keep their collision on per-grade skins. Read them through reflection so this
         // compiles even if field names differ between Rust versions; anything missing is reported, not fatal.
-        private Dictionary<string, List<Box>> MeasureGrades(GameObject go, List<string> errors)
+        private Dictionary<string, List<Box>> MeasureGrades(GameObject go, List<string> errors, List<MeshShape> meshes, string prefab)
         {
             var result = new Dictionary<string, List<Box>>();
             var bb = go.GetComponent<BuildingBlock>();
@@ -202,6 +231,8 @@ namespace Oxide.Plugins
                     var skin = GameManager.server.FindPrefab(skinRef.resourcePath);
                     if (skin == null) continue;
                     result[gradeName] = CollidersOf(skin, skin.transform);
+                    // One grade's exact collision shapes are enough: every grade shares the same footprint.
+                    if (gradeName == "Stone") DumpMeshes(skin, prefab, gradeName, meshes, errors);
                 }
             }
             catch (Exception ex) { errors.Add(go.name + " grades: " + ex.Message); }
