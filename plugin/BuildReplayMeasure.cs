@@ -10,7 +10,7 @@ namespace Oxide.Plugins
     // Run `brmeasure` in the server console. It reads (without spawning anything into the world) the exact
     // bounds and collision boxes of every deployable item and every building-core prefab, and writes them to
     // oxide/data/BuildReplay/measurements.json (carbon/data/... on Carbon). Send that file back to be imported.
-    [Info("BuildReplayMeasure", "BuildReplay", "0.3.0")]
+    [Info("BuildReplayMeasure", "BuildReplay", "0.4.0")]
     [Description("Dumps exact sizes of deployables and building pieces for the BuildReplay sandbox.")]
     public class BuildReplayMeasure : RustPlugin
     {
@@ -32,6 +32,11 @@ namespace Oxide.Plugins
             public Box bounds;
             public List<Box> colliders = new List<Box>();
             public Dictionary<string, List<Box>> gradeColliders;
+            // Building pieces only: how they connect (sockets) and their construction / stability settings,
+            // read field by field so nothing depends on Rust's internal names compiling.
+            public List<Dictionary<string, object>> sockets;
+            public Dictionary<string, object> construction;
+            public Dictionary<string, object> stability;
         }
 
         // The exact shape of a mesh collider: vertices in the prefab root's local space, plus triangles.
@@ -55,6 +60,7 @@ namespace Oxide.Plugins
             public List<Entry> player = new List<Entry>();
             public List<string> searched = new List<string>();
             public List<MeshShape> meshes = new List<MeshShape>();
+            public Dictionary<string, object> stabilitySettings;
             public List<string> errors = new List<string>();
         }
 
@@ -117,11 +123,14 @@ namespace Oxide.Plugins
                     if (isPlayer) { output.player.Add(entry); continue; }
                     if (go.GetComponent<BuildingBlock>() == null) continue; // skins and helpers, not pieces
                     entry.gradeColliders = MeasureGrades(go, output.errors, output.meshes, entry.prefab);
+                    DumpConnections(go, path, entry, output.errors);
                     output.building.Add(entry);
                     seenPaths.Add(path);
                 }
                 catch (Exception ex) { output.errors.Add(path + ": " + ex.Message); }
             }
+
+            output.stabilitySettings = StaticFields("ConVar.Stability", output.errors);
 
             Interface.Oxide.DataFileSystem.WriteObject("BuildReplay/measurements", output);
             arg.ReplyWith($"BuildReplay: measured {output.deployables.Count} deployables, {output.building.Count} building pieces and {output.player.Count} player model " +
@@ -179,6 +188,110 @@ namespace Oxide.Plugins
                 list.Add(new Box { center = V((min + max) * 0.5f), size = V(max - min), name = col.gameObject.name, type = type });
             }
             return list;
+        }
+
+        private const BindingFlags AllInstance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+
+        private void DumpConnections(GameObject go, string path, Entry entry, List<string> errors)
+        {
+            try
+            {
+                var id = StringPool.Get(path);
+                var con = PrefabAttribute.server.Find<Construction>(id);
+                if (con == null) { errors.Add("No construction for " + path); }
+                else
+                {
+                    entry.construction = Fields(con, 0);
+                    var socketsField = FindField(con.GetType(), "allSockets");
+                    var arr = socketsField != null ? socketsField.GetValue(con) as Array : null;
+                    entry.sockets = new List<Dictionary<string, object>>();
+                    if (arr != null) foreach (var sock in arr) if (sock != null) entry.sockets.Add(Fields(sock, 0));
+                }
+            }
+            catch (Exception ex) { errors.Add(path + " sockets: " + ex.Message); }
+            try
+            {
+                foreach (var comp in go.GetComponents<Component>())
+                {
+                    if (comp == null) continue;
+                    var n = comp.GetType().Name;
+                    if (n == "BuildingBlock" || n == "StabilityEntity" || n == "DecayEntity")
+                    {
+                        if (entry.stability == null) entry.stability = new Dictionary<string, object>();
+                        entry.stability[n] = Fields(comp, 1);
+                    }
+                }
+            }
+            catch (Exception ex) { errors.Add(path + " stability: " + ex.Message); }
+        }
+
+        private static FieldInfo FindField(Type t, string name)
+        {
+            for (; t != null; t = t.BaseType)
+            {
+                var f = t.GetField(name, AllInstance);
+                if (f != null) return f;
+            }
+            return null;
+        }
+
+        // Every field of an object (including base classes up to Unity's own types), as JSON-friendly values.
+        private Dictionary<string, object> Fields(object o, int depth)
+        {
+            var d = new Dictionary<string, object> { ["_type"] = o.GetType().Name };
+            for (var t = o.GetType(); t != null && t != typeof(object) && t != typeof(UnityEngine.Object) && t != typeof(Component) && t != typeof(MonoBehaviour) && t != typeof(Behaviour); t = t.BaseType)
+            {
+                if (depth > 0 && (t.Name == "BaseEntity" || t.Name == "BaseNetworkable" || t.Name == "BaseMonoBehaviour")) break;
+                foreach (var f in t.GetFields(AllInstance))
+                {
+                    if (d.ContainsKey(f.Name)) continue;
+                    object v;
+                    try { v = f.GetValue(o); } catch { continue; }
+                    d[f.Name] = Simple(v, depth);
+                }
+            }
+            return d;
+        }
+
+        private object Simple(object v, int depth)
+        {
+            if (v == null) return null;
+            if (v is string || v is bool || v is int || v is uint || v is long || v is ulong || v is short || v is byte) return v;
+            if (v is float) return R((float)v);
+            if (v is double) return Math.Round((double)v, 4);
+            if (v is Enum) return v.ToString();
+            if (v is Vector3) return V((Vector3)v);
+            if (v is Quaternion) return V(((Quaternion)v).eulerAngles);
+            if (v is Bounds) { var b = (Bounds)v; return new Dictionary<string, object> { ["center"] = V(b.center), ["size"] = V(b.size) }; }
+            var uo = v as UnityEngine.Object;
+            if (uo != null) return "<" + v.GetType().Name + ":" + uo.name + ">";
+            var e = v as System.Collections.IEnumerable;
+            if (e != null)
+            {
+                var list = new List<object>();
+                var n = 0;
+                foreach (var item in e) { if (n++ >= 64) break; list.Add(depth < 2 && item != null && !(item is UnityEngine.Object) && item.GetType().IsClass && !(item is string) ? (object)Fields(item, depth + 1) : Simple(item, depth + 1)); }
+                return list;
+            }
+            if (depth < 2 && v.GetType().IsClass) return Fields(v, depth + 1);
+            return v.ToString();
+        }
+
+        private Dictionary<string, object> StaticFields(string typeName, List<string> errors)
+        {
+            var d = new Dictionary<string, object>();
+            try
+            {
+                Type t = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) { t = asm.GetType(typeName); if (t != null) break; }
+                if (t == null) { errors.Add("Type not found: " + typeName); return d; }
+                foreach (var f in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
+                {
+                    try { d[f.Name] = Simple(f.GetValue(null), 1); } catch { }
+                }
+            }
+            catch (Exception ex) { errors.Add(typeName + ": " + ex.Message); }
+            return d;
         }
 
         private void DumpMeshes(GameObject skin, string prefab, string grade, List<MeshShape> meshes, List<string> errors)
