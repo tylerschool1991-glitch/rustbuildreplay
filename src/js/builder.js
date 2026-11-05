@@ -62,7 +62,7 @@ const Builder = (function () {
     { id: "rotate", name: "Rotate", desc: "Turn the piece you hit." },
     { id: "demolish", name: "Demolish", desc: "Remove the piece you hit and anything it was holding up." }
   ];
-  const SLOTS = ["plan", "hammer", "deploy"];
+  const SLOTS = ["plan", "hammer"];
   const STORE_KEY = "buildreplay.sandbox.v3";
   const MAX_LEVEL = 5;
   const FOUNDATION_DEPTH = 4; // the foundation model reaches 4 m below its top
@@ -834,8 +834,13 @@ const Builder = (function () {
     });
     wheelIcon.innerHTML = it ? it.icon : "";
     wheelName.textContent = it ? it.name : "";
-    wheelSub.textContent = it ? it.desc : "";
+    wheelSub.textContent = it ? (W.target ? targetLine(it) : it.desc) : "";
     wheelEl.classList.toggle("current", !!isCurrent);
+  }
+  function targetLine(it) {
+    const t = W.target, nm = (STRUCTURAL.has(t.prefab) ? gradeName(t.grade) + " " : "") + prefabName(t.prefab).toLowerCase();
+    if (GRADES[it.id]) return "Upgrade this " + nm + " to " + GRADES[it.id].name.toLowerCase();
+    return (it.id === "rotate" ? "Rotate this " : "Demolish this ") + nm;
   }
   function openWheel(sx, sy, sticky) {
     renderWheel();
@@ -850,7 +855,12 @@ const Builder = (function () {
     wheelEl.style.setProperty("--wheel-scale", W.scale);
     wheelEl.hidden = false;
     W.open = true; W.sticky = !!sticky; W.hovered = null; W.openedAt = performance.now(); W.start = [sx, sy];
+    // Like Rust: the hammer wheel acts on the piece you were looking at when you opened it.
+    W.target = null;
+    if (ui.slot === "hammer" && !sticky) { const hit = pieceUnder(sx, sy); if (hit) W.target = hit.piece; }
     hideGhost(); clearHighlight();
+    if (W.target) highlight(W.target);
+    showWheelItem(W.items.find(it => it.id === selectedId()) || null, true);
     return true;
   }
   function wheelHit(sx, sy) {
@@ -871,7 +881,16 @@ const Builder = (function () {
     if (!W.open) return;
     W.open = false;
     wheelEl.hidden = true;
-    if (choose && W.hovered) chooseFromWheel(W.hovered.id);
+    const target = W.target;
+    W.target = null;
+    if (choose && W.hovered) {
+      chooseFromWheel(W.hovered.id);
+      if (target && S.pieces.has(target.id)) {
+        if (ui.tool === "demolish") actDemolish(target.id);
+        else if (ui.tool === "rotate") actRotate(target.id);
+        else if (ui.tool === "upgrade") actUpgrade(target.id);
+      }
+    }
     W.hovered = null;
     updateHover();
   }
@@ -906,15 +925,13 @@ const Builder = (function () {
   function hammerLabel() {
     return GRADES[ui.hammer] ? "Upgrade to " + GRADES[ui.hammer].name : ui.hammer === "rotate" ? "Rotate" : "Demolish";
   }
-  const SLOT_NAMES = { plan: "Building Plan", hammer: "Hammer", deploy: "Deployable" };
+  const SLOT_NAMES = { plan: "Building Plan", hammer: "Hammer", deploy: "Deployables" };
   function updateHeader() {
     $("bKicker").textContent = SLOT_NAMES[ui.slot] + " · " + (LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1));
     $("bLabel").textContent = ui.slot === "hammer" ? hammerLabel() : prefabName(ui.prefab);
     $("lvlLabel").textContent = LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1);
     $("slotPlanSub").textContent = prefabName(ui.plan);
     $("slotHammerSub").textContent = hammerLabel();
-    $("slotDeploySub").textContent = prefabName(ui.deploy);
-    $("slotDeployIcon").innerHTML = isoIcon(ui.deploy);
     document.querySelectorAll(".slot").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.slot === ui.slot)));
     document.querySelectorAll("#deployList .dock-item").forEach(b => b.setAttribute("aria-pressed", String(ui.slot === "deploy" && b.dataset.prefab === ui.deploy)));
   }
@@ -1108,7 +1125,7 @@ const Builder = (function () {
       if (k === "r") { ui.rot++; updateHover(); }
       else if (k === "[" || e.key === "PageDown") setLevel(ui.level - 1);
       else if (k === "]" || e.key === "PageUp") setLevel(ui.level + 1);
-      else if (/^[1-3]$/.test(k)) selectSlot(SLOTS[Number(k) - 1]);
+      else if (/^[1-2]$/.test(k)) selectSlot(SLOTS[Number(k) - 1]);
     });
   }
 
