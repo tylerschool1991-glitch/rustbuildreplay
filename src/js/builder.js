@@ -14,16 +14,23 @@ const Builder = (function () {
   const TURN = { sq: 90, tri: 120 };
   const SOLID_FLOORS = new Set(["floor", "floor.triangle"]);
   const FULL_WALLS = new Set(["wall", "wall.doorway", "wall.window", "wall.frame"]);
-  const PALETTE = [
-    ["Foundations", ["foundation", "foundation.triangle", "foundation.steps"]],
-    ["Walls", ["wall", "wall.doorway", "wall.window", "wall.half", "wall.low", "wall.frame"]],
-    ["Floors", ["floor", "floor.triangle", "floor.frame", "floor.triangle.frame"]],
-    ["Stairs", ["block.stair.ushape", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp"]],
-    ["Roofs", ["roof", "roof.triangle"]],
-    ["Deployables", ["door.hinged.metal", "cupboard.tool.deployed", "box.wooden.large", "furnace", "sleepingbag_leather_deployed"]]
+  // Building plan wheel: inner ring holds the everyday pieces, outer ring the rest.
+  const PLAN_INNER = ["foundation", "foundation.triangle", "wall", "wall.doorway", "wall.window", "floor", "floor.triangle", "block.stair.ushape", "roof", "roof.triangle"];
+  const PLAN_OUTER = ["foundation.steps", "wall.half", "wall.low", "wall.frame", "floor.frame", "floor.triangle.frame", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp"];
+  const DEPLOYABLES = ["door.hinged.metal", "cupboard.tool.deployed", "box.wooden.large", "furnace", "sleepingbag_leather_deployed"];
+  const WHEEL_LABEL = {
+    "foundation": "Foundation", "foundation.triangle": "Triangle|Foundation", "foundation.steps": "Foundation|Steps",
+    "wall": "Wall", "wall.doorway": "Doorway", "wall.window": "Window", "wall.half": "Half Wall", "wall.low": "Low Wall", "wall.frame": "Wall Frame",
+    "floor": "Floor", "floor.triangle": "Triangle|Floor", "floor.frame": "Floor|Frame", "floor.triangle.frame": "Triangle|Floor Frame",
+    "block.stair.ushape": "U Stairs", "block.stair.lshape": "L Stairs", "block.stair.spiral": "Spiral|Stairs", "block.stair.spiral.triangle": "Triangle|Spiral", "ramp": "Ramp",
+    "roof": "Roof", "roof.triangle": "Triangle|Roof",
+    "door.hinged.metal": "Sheet Metal|Door", "cupboard.tool.deployed": "Tool|Cupboard", "box.wooden.large": "Large|Wood Box", "furnace": "Furnace", "sleepingbag_leather_deployed": "Sleeping|Bag"
+  };
+  const HAMMER = [
+    { id: "wood", label: "Wood" }, { id: "stone", label: "Stone" }, { id: "metal", label: "Sheet|Metal" }, { id: "toptier", label: "Armored" },
+    { id: "rotate", label: "Rotate" }, { id: "demolish", label: "Demolish" }
   ];
-  // Number keys 1–9, 0.
-  const HOTKEYS = ["foundation", "foundation.triangle", "wall", "wall.doorway", "wall.window", "floor", "floor.triangle", "block.stair.ushape", "roof", "roof.triangle"];
+  const SLOTS = ["plan", "hammer", "deploy", "tape"];
   // Deployable footprints in metres (width along local x, depth along local z). Approximate; to be checked in-game.
   const FOOTPRINT = {
     "cupboard.tool.deployed": [0.96, 0.6],
@@ -31,7 +38,6 @@ const Builder = (function () {
     "furnace": [0.85, 0.85],
     "sleepingbag_leather_deployed": [0.8, 1.9]
   };
-  const TOOLS = { place: "Place", upgrade: "Upgrade", rotate: "Rotate", demolish: "Demolish" };
   const STORE_KEY = "buildreplay.sandbox.v3";
   const MAX_LEVEL = 5;
   const FOUNDATION_DEPTH = 4; // the foundation model reaches 4 m below its top
@@ -199,7 +205,7 @@ const Builder = (function () {
   let renderer, scene, camera, controls, root, ghost = null, ghostPrefab = null;
 
   const S = { pieces: new Map(), sock: new Map(), events: [], nextId: 1, alias: new Map(), undo: [], redo: [], baseT: 0, resumeAt: null, name: "" };
-  const ui = { tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
+  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
   let hover = null, lastPointer = null, highlighted = null, flashTimer = null;
 
   const all = () => Array.from(S.pieces.values());
@@ -316,13 +322,16 @@ const Builder = (function () {
     ray.setFromCamera(ndc, camera);
   }
   const shown = o => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
-  function pieceUnder(sx, sy) {
+  // The first visible piece under the pointer (optionally only pieces matching a filter, e.g. floors behind a wall).
+  function pieceUnder(sx, sy, filter) {
     setRay(sx, sy);
     const hits = ray.intersectObjects(root.children, true).filter(h => h.object.isMesh && shown(h.object));
     for (const h of hits) {
       let o = h.object;
       while (o && o.userData.pid === undefined) o = o.parent;
-      if (o) return { piece: S.pieces.get(o.userData.pid), point: h.point };
+      if (!o) continue;
+      const piece = S.pieces.get(o.userData.pid);
+      if (!filter || filter(piece)) return { piece, point: h.point };
     }
     return null;
   }
@@ -407,8 +416,8 @@ const Builder = (function () {
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(best.rot + (ui.rot % 2 ? 180 : 0)) };
     } else {
-      const hit = pieceUnder(sx, sy);
-      if (hit && isSolidSurface(hit.piece) && hit.piece.L === ui.level) {
+      const hit = pieceUnder(sx, sy, p => isSolidSurface(p) && p.L === ui.level);
+      if (hit) {
         c = { L: ui.level, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot: norm(ui.rot * 90) };
       }
     }
@@ -673,6 +682,43 @@ const Builder = (function () {
     p.mesh.children.forEach(ch => { if (ch.isLineSegments) ch.material = m; });
   }
 
+  // ---------- Tape measure ----------
+  const tape = { a: null, b: null, group: null, line: null, dots: [] };
+  function initTape() {
+    tape.group = new THREE.Group();
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xd8b45f, depthTest: false, transparent: true });
+    tape.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), lineMat);
+    tape.line.renderOrder = 10;
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xd8b45f, depthTest: false, transparent: true });
+    const dotGeo = new THREE.SphereGeometry(0.09, 12, 8);
+    tape.dots = [new THREE.Mesh(dotGeo, dotMat), new THREE.Mesh(dotGeo, dotMat)];
+    tape.dots.forEach(d => { d.renderOrder = 11; tape.group.add(d); });
+    tape.group.add(tape.line);
+    tape.group.visible = false;
+    scene.add(tape.group);
+  }
+  function tapePoint(sx, sy) {
+    const hit = pieceUnder(sx, sy);
+    if (hit) return hit.point.clone();
+    setRay(sx, sy);
+    const t = terrainMesh && ray.intersectObject(terrainMesh)[0];
+    return t ? t.point.clone() : null;
+  }
+  function drawTape(a, b) {
+    tape.group.visible = true;
+    tape.line.geometry.setFromPoints([a, b]);
+    tape.dots[0].position.copy(a);
+    tape.dots[1].position.copy(b);
+    const d = a.distanceTo(b), across = Math.hypot(b.x - a.x, b.z - a.z), up = b.y - a.y;
+    return d.toFixed(2) + " m  ·  across " + across.toFixed(2) + " m  ·  " + (up >= 0 ? "up " : "down ") + Math.abs(up).toFixed(2) + " m";
+  }
+  function tapeClick(sx, sy) {
+    const p = tapePoint(sx, sy);
+    if (!p) return flash("Point at the ground or a building piece");
+    if (!tape.a || tape.b) { tape.a = p; tape.b = null; drawTape(p, p); setHint("Click a second point to measure", false); }
+    else { tape.b = p; setHint(drawTape(tape.a, tape.b), false); }
+  }
+
   // ---------- Pointer ----------
   function local(clientX, clientY) {
     const r = canvas.getBoundingClientRect();
@@ -682,6 +728,12 @@ const Builder = (function () {
     if (!lastPointer) return;
     const [sx, sy] = lastPointer;
     clearHighlight();
+    if (ui.tool === "tape") {
+      hideGhost();
+      if (tape.a && !tape.b) { const p = tapePoint(sx, sy); if (p && !flashTimer) setHint(drawTape(tape.a, p), false); }
+      else if (!tape.a && !flashTimer) setHint("Click a point to start measuring", false);
+      return;
+    }
     if (ui.tool === "place") {
       const c = snap(sx, sy);
       if (!c) {
@@ -704,6 +756,7 @@ const Builder = (function () {
     }
   }
   function act() {
+    if (ui.tool === "tape") { tapeClick(lastPointer[0], lastPointer[1]); return; }
     if (!hover) return;
     if (ui.tool === "place") actPlace(hover.cand);
     else if (hover.piece) {
@@ -713,6 +766,116 @@ const Builder = (function () {
       else if (ui.tool === "rotate") actRotate(id);
     }
     updateHover();
+  }
+
+  // ---------- Radial wheel (hold right-click, like Rust) ----------
+  const wheelEl = $("wheel"), wheelSvg = $("wheelSvg"), wheelName = $("wheelName"), wheelSub = $("wheelSub");
+  const W = { open: false, sticky: false, rings: [], hovered: null, cx: 0, cy: 0, scale: 1, openedAt: 0, start: null };
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function wheelSpec() {
+    const item = id => ({ id, label: WHEEL_LABEL[id] || prefabName(id), full: prefabName(id) });
+    if (ui.slot === "plan") return { title: "Building Plan", rings: [{ r0: 64, r1: 152, items: PLAN_INNER.map(item) }, { r0: 156, r1: 236, items: PLAN_OUTER.map(item) }] };
+    if (ui.slot === "hammer") return {
+      title: "Hammer",
+      rings: [{ r0: 64, r1: 200, items: HAMMER.map(h => ({ id: h.id, label: h.label, full: GRADES[h.id] ? "Upgrade to " + GRADES[h.id].name : h.label, swatch: GRADES[h.id] ? GRADES[h.id].hex : null })) }]
+    };
+    if (ui.slot === "deploy") return { title: "Deployables", rings: [{ r0: 64, r1: 200, items: DEPLOYABLES.map(item) }] };
+    return null;
+  }
+  const selectedId = () => (ui.slot === "plan" ? ui.plan : ui.slot === "hammer" ? ui.hammer : ui.deploy);
+  function arcPath(r0, r1, a0, a1) {
+    const P = (r, a) => (r * Math.cos(rad(a))).toFixed(2) + " " + (r * Math.sin(rad(a))).toFixed(2);
+    const large = a1 - a0 > 180 ? 1 : 0;
+    return "M" + P(r1, a0) + " A" + r1 + " " + r1 + " 0 " + large + " 1 " + P(r1, a1) + " L" + P(r0, a1) + " A" + r0 + " " + r0 + " 0 " + large + " 0 " + P(r0, a0) + " Z";
+  }
+  function renderWheel(spec) {
+    wheelSvg.innerHTML = "";
+    W.rings = spec.rings;
+    const sel = selectedId();
+    spec.rings.forEach(ring => {
+      const n = ring.items.length, step = 360 / n;
+      ring.items.forEach((it, i) => {
+        const mid = -90 + i * step;
+        const g = document.createElementNS(SVGNS, "g");
+        g.setAttribute("class", "wseg" + (it.id === sel ? " sel" : ""));
+        g.dataset.id = it.id;
+        const path = document.createElementNS(SVGNS, "path");
+        path.setAttribute("d", arcPath(ring.r0, ring.r1, mid - step / 2 + 0.7, mid + step / 2 - 0.7));
+        g.appendChild(path);
+        const rm = (ring.r0 + ring.r1) / 2;
+        const tx = rm * Math.cos(rad(mid)), ty = rm * Math.sin(rad(mid));
+        if (it.swatch) {
+          const sw = document.createElementNS(SVGNS, "rect");
+          sw.setAttribute("x", (tx - 7).toFixed(1)); sw.setAttribute("y", (ty - 24).toFixed(1));
+          sw.setAttribute("width", "14"); sw.setAttribute("height", "10"); sw.setAttribute("rx", "2");
+          sw.setAttribute("fill", it.swatch); sw.setAttribute("class", "wsw");
+          g.appendChild(sw);
+        }
+        const lines = it.label.split("|");
+        const text = document.createElementNS(SVGNS, "text");
+        text.setAttribute("x", tx.toFixed(1));
+        text.setAttribute("y", (ty - (lines.length - 1) * 6.5 + 4).toFixed(1));
+        lines.forEach((ln, k) => {
+          const ts = document.createElementNS(SVGNS, "tspan");
+          ts.setAttribute("x", tx.toFixed(1));
+          if (k) ts.setAttribute("dy", "13");
+          ts.textContent = ln;
+          text.appendChild(ts);
+        });
+        g.appendChild(text);
+        wheelSvg.appendChild(g);
+      });
+    });
+    wheelName.textContent = spec.title;
+    wheelSub.textContent = "Release on a choice";
+  }
+  function openWheel(sx, sy, sticky) {
+    const spec = wheelSpec();
+    if (!spec) return false;
+    renderWheel(spec);
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    const outer = spec.rings[spec.rings.length - 1].r1 + 8;
+    W.scale = Math.min(1, (Math.min(vw, vh) - 16) / (outer * 2));
+    const half = outer * W.scale;
+    W.cx = Math.max(half + 4, Math.min(vw - half - 4, sx));
+    W.cy = Math.max(half + 4, Math.min(vh - half - 4, sy));
+    wheelEl.style.left = W.cx + "px";
+    wheelEl.style.top = W.cy + "px";
+    wheelEl.style.setProperty("--wheel-scale", W.scale);
+    wheelEl.hidden = false;
+    W.open = true; W.sticky = !!sticky; W.hovered = null; W.openedAt = performance.now(); W.start = [sx, sy];
+    hideGhost(); clearHighlight();
+    return true;
+  }
+  function wheelHit(sx, sy) {
+    const dx = (sx - W.cx) / W.scale, dy = (sy - W.cy) / W.scale, d = Math.hypot(dx, dy);
+    if (d < W.rings[0].r0 - 6) return null;
+    let ring = W.rings.find(r => d < r.r1 + 2) || W.rings[W.rings.length - 1];
+    const n = ring.items.length, step = 360 / n;
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    const idx = ((Math.round((ang + 90) / step) % n) + n) % n;
+    return ring.items[idx];
+  }
+  function wheelHover(sx, sy) {
+    const it = wheelHit(sx, sy);
+    W.hovered = it;
+    wheelSvg.querySelectorAll(".wseg").forEach(g => g.classList.toggle("hot", !!it && g.dataset.id === it.id));
+    wheelName.textContent = it ? it.full : wheelSpec().title;
+    wheelSub.textContent = it ? (W.sticky ? "Click to select" : "Release to select") : (W.sticky ? "Click a choice" : "Release on a choice");
+  }
+  function closeWheel(choose) {
+    if (!W.open) return;
+    W.open = false;
+    wheelEl.hidden = true;
+    if (choose && W.hovered) chooseFromWheel(W.hovered.id);
+    W.hovered = null;
+    updateHover();
+  }
+  function chooseFromWheel(id) {
+    if (ui.slot === "plan") ui.plan = id;
+    else if (ui.slot === "hammer") ui.hammer = id;
+    else if (ui.slot === "deploy") ui.deploy = id;
+    selectSlot(ui.slot);
   }
 
   // ---------- UI ----------
@@ -727,19 +890,28 @@ const Builder = (function () {
     flashTimer = setTimeout(() => { flashTimer = null; updateHover(); }, 2600);
   }
   function idleHint() {
-    if (ui.tool === "upgrade") return "Click a building piece to upgrade it to " + gradeName(ui.grade);
-    if (ui.tool === "rotate") return "Click a piece to rotate it";
-    return "Click a piece to demolish it";
+    if (ui.tool === "upgrade") return "Hit a building piece to upgrade it to " + gradeName(ui.grade);
+    if (ui.tool === "rotate") return "Hit a piece to rotate it";
+    return "Hit a piece to demolish it";
   }
   function toolHint(p) {
     if (ui.tool === "upgrade") return STRUCTURAL.has(p.prefab) ? "Upgrade " + gradeName(p.grade) + " " + prefabName(p.prefab).toLowerCase() + " to " + gradeName(ui.grade) : prefabName(p.prefab) + " has no grade";
     if (ui.tool === "rotate") return "Rotate " + prefabName(p.prefab).toLowerCase();
     return "Demolish " + prefabName(p.prefab).toLowerCase();
   }
+  function hammerLabel() {
+    return GRADES[ui.hammer] ? "Upgrade to " + GRADES[ui.hammer].name : ui.hammer === "rotate" ? "Rotate" : "Demolish";
+  }
+  const SLOT_NAMES = { plan: "Building Plan", hammer: "Hammer", deploy: "Deployable", tape: "Tape Measure" };
   function updateHeader() {
-    $("bKicker").textContent = TOOLS[ui.tool] + " · " + (LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1));
-    $("bLabel").textContent = ui.tool === "place" ? prefabName(ui.prefab) : ui.tool === "upgrade" ? "Upgrade to " + gradeName(ui.grade) : TOOLS[ui.tool];
+    $("bKicker").textContent = SLOT_NAMES[ui.slot] + " · " + (LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1));
+    $("bLabel").textContent = ui.slot === "hammer" ? hammerLabel() : ui.slot === "tape" ? "Measure" : prefabName(ui.prefab);
     $("lvlLabel").textContent = LEVEL_NAMES[ui.level] || "Level " + (ui.level + 1);
+    $("slotPlanSub").textContent = prefabName(ui.plan);
+    $("slotHammerSub").textContent = hammerLabel();
+    $("slotDeploySub").textContent = prefabName(ui.deploy);
+    document.querySelectorAll(".slot").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.slot === ui.slot)));
+    document.querySelectorAll("#palDeploy .pbtn").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.prefab === ui.deploy)));
   }
   function updateStats() {
     let pieces = 0, deploy = 0;
@@ -768,26 +940,23 @@ const Builder = (function () {
     save();
   }
 
-  function setTool(t) {
-    ui.tool = t;
-    document.querySelectorAll("#toolSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
+  function selectSlot(slot) {
+    const prevPrefab = ui.prefab;
+    ui.slot = slot;
+    if (slot === "plan") { ui.tool = "place"; ui.prefab = ui.plan; }
+    else if (slot === "deploy") { ui.tool = "place"; ui.prefab = ui.deploy; }
+    else if (slot === "hammer") {
+      if (GRADES[ui.hammer]) { ui.tool = "upgrade"; ui.grade = ui.hammer; }
+      else ui.tool = ui.hammer;
+    } else ui.tool = "tape";
+    if (ui.prefab !== prevPrefab) ui.rot = 0;
+    if (tape.group) tape.group.visible = slot === "tape" && !!tape.a;
+    if (slot === "tape") { tape.a = null; tape.b = null; if (tape.group) tape.group.visible = false; }
     updateHeader(); refreshVisibility(); updateHover();
-  }
-  function setPrefab(prefab) {
-    ui.prefab = prefab;
-    ui.rot = 0;
-    document.querySelectorAll(".pbtn[data-prefab]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.prefab === prefab)));
-    setTool("place");
   }
   function setLevel(L) {
     ui.level = Math.max(0, Math.min(MAX_LEVEL, L));
     updateHeader(); refreshVisibility(); updateHover();
-  }
-  function setGrade(g) {
-    ui.grade = g;
-    document.querySelectorAll(".gpick").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.grade === g)));
-    $("bUpAll").textContent = "Upgrade everything to " + gradeName(g);
-    updateHeader(); updateHover();
   }
   function frameBuild() {
     const fs = all().filter(p => p.kind === "F");
@@ -820,41 +989,39 @@ const Builder = (function () {
   }
 
   function buildPanels() {
-    const host = $("palettes");
-    PALETTE.forEach(([title, list]) => {
-      host.appendChild(el("h2", null, title));
-      const grid = el("div", "palette");
-      list.forEach(prefab => {
-        const b = el("button", "pbtn");
-        b.type = "button";
-        b.dataset.prefab = prefab;
-        b.setAttribute("aria-pressed", "false");
-        b.appendChild(el("span", null, prefabName(prefab)));
-        const hk = HOTKEYS.indexOf(prefab);
-        if (hk >= 0) b.appendChild(el("kbd", null, String((hk + 1) % 10)));
-        b.addEventListener("click", () => setPrefab(prefab));
-        grid.appendChild(b);
-      });
-      host.appendChild(grid);
+    DEPLOYABLES.forEach(prefab => {
+      const b = el("button", "pbtn");
+      b.type = "button";
+      b.dataset.prefab = prefab;
+      b.setAttribute("aria-pressed", "false");
+      b.appendChild(el("span", null, prefabName(prefab)));
+      b.addEventListener("click", () => { ui.deploy = prefab; selectSlot("deploy"); });
+      $("palDeploy").appendChild(b);
     });
     GRADE_ORDER.forEach(g => {
-      const b = el("button", "pbtn gpick");
-      b.type = "button";
-      b.dataset.grade = g;
-      const sw = el("i", "sw"); sw.style.background = GRADES[g].hex;
-      const label = el("span");
-      label.append(sw, document.createTextNode(" " + GRADES[g].name));
-      b.appendChild(label);
-      b.addEventListener("click", () => { setGrade(g); if (g !== "twigs") setTool("upgrade"); });
-      $("gradePick").appendChild(b);
+      if (g === "twigs") return;
+      const o = el("option", null, GRADES[g].name);
+      o.value = g;
+      if (g === "stone") o.selected = true;
+      $("upAllGrade").appendChild(o);
     });
 
-    $("toolSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setTool(b.dataset.tool); });
+    // Hotbar: clicking a slot selects it; clicking the active slot opens its wheel (handy on touch screens).
+    document.querySelectorAll(".slot").forEach(b => b.addEventListener("click", () => {
+      const slot = b.dataset.slot;
+      if (slot === ui.slot && slot !== "tape") openWheel(viewport.clientWidth / 2, viewport.clientHeight / 2, true);
+      else selectSlot(slot);
+    }));
     $("lvlDown").addEventListener("click", () => setLevel(ui.level - 1));
     $("lvlUp").addEventListener("click", () => setLevel(ui.level + 1));
     $("bUndo").addEventListener("click", undo);
     $("bRedo").addEventListener("click", redo);
-    $("bUpAll").addEventListener("click", upgradeAll);
+    $("bUpAll").addEventListener("click", () => {
+      const prev = ui.grade;
+      ui.grade = $("upAllGrade").value;
+      upgradeAll();
+      if (ui.tool !== "upgrade") ui.grade = prev;
+    });
     $("optHideAbove").addEventListener("change", e => { ui.hideAbove = e.target.checked; refreshVisibility(); updateHover(); });
     const name = $("bName");
     name.value = S.name;
@@ -882,21 +1049,29 @@ const Builder = (function () {
       );
     });
 
+    // Wheel picking with a click (for a wheel opened from the hotbar or by a quick right-click).
+    wheelEl.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const [sx, sy] = local(e.clientX, e.clientY);
+      wheelHover(sx, sy);
+      closeWheel(true);
+    });
+    wheelEl.addEventListener("pointermove", e => { if (W.sticky) { const [sx, sy] = local(e.clientX, e.clientY); wheelHover(sx, sy); } });
+    viewport.addEventListener("contextmenu", e => e.preventDefault());
+
     document.addEventListener("keydown", e => {
       if (!active) return;
       if (e.target.closest("input, select, textarea")) return;
       const k = e.key.toLowerCase();
+      if (k === "escape" && W.open) { closeWheel(false); return; }
       if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
       if ((e.ctrlKey || e.metaKey) && k === "y") { e.preventDefault(); redo(); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (k === "r") { ui.rot++; updateHover(); }
-      else if (k === "p") setTool("place");
-      else if (k === "u") setTool("upgrade");
-      else if (k === "o") setTool("rotate");
-      else if (k === "x") setTool("demolish");
       else if (k === "[" || e.key === "PageDown") setLevel(ui.level - 1);
       else if (k === "]" || e.key === "PageUp") setLevel(ui.level + 1);
-      else if (/^[0-9]$/.test(k)) { const n = (Number(k) + 9) % 10; if (HOTKEYS[n]) setPrefab(HOTKEYS[n]); }
+      else if (/^[1-4]$/.test(k)) selectSlot(SLOTS[Number(k) - 1]);
     });
   }
 
@@ -921,6 +1096,8 @@ const Builder = (function () {
     scene.fog = new THREE.Fog(SKY, 55, 150);
     camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
     controls = new THREE.OrbitControls(camera, canvas);
+    // Left-drag orbits, middle-drag (or Shift+drag) pans; right button is reserved for the wheel.
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: -1 };
     controls.enableDamping = !reduceMotion;
     controls.dampingFactor = 0.1;
     controls.maxPolarAngle = Math.PI * 0.47;
@@ -928,19 +1105,28 @@ const Builder = (function () {
     controls.maxDistance = 90;
     root = new THREE.Group();
     scene.add(root);
+    initTape();
 
     const saved = loadSaved();
     setTerrain(saved && saved.seed ? saved.seed : newSeed());
     if (saved && Array.isArray(saved.pieces)) restore(saved); else seedStarter();
     buildPanels();
-    setPrefab("foundation");
-    setGrade("stone");
+    selectSlot("plan");
     afterChange();
     frameBuild();
 
     let down = null;
-    canvas.addEventListener("pointermove", e => { lastPointer = local(e.clientX, e.clientY); if (!down) updateHover(); });
-    canvas.addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY, b: e.button }; });
+    canvas.addEventListener("pointermove", e => { lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
+    canvas.addEventListener("pointerdown", e => {
+      if (W.open) { e.preventDefault(); closeWheel(false); return; }
+      if (e.button === 2) {
+        e.preventDefault();
+        const [sx, sy] = local(e.clientX, e.clientY);
+        openWheel(sx, sy, false);
+        return;
+      }
+      down = { x: e.clientX, y: e.clientY, b: e.button };
+    });
     canvas.addEventListener("pointerup", e => {
       const d = down; down = null;
       if (!d || d.b !== 0) return;
@@ -949,8 +1135,20 @@ const Builder = (function () {
       updateHover();
       act();
     });
-    canvas.addEventListener("pointerleave", () => { hideGhost(); clearHighlight(); hover = null; });
-    canvas.addEventListener("contextmenu", e => e.preventDefault());
+    // While the wheel is held open with the right button, track the pointer anywhere and pick on release.
+    window.addEventListener("pointermove", e => {
+      if (!W.open || W.sticky) return;
+      const [sx, sy] = local(e.clientX, e.clientY);
+      wheelHover(sx, sy);
+    });
+    window.addEventListener("pointerup", e => {
+      if (!W.open || W.sticky || e.button !== 2) return;
+      const [sx, sy] = local(e.clientX, e.clientY);
+      const quick = performance.now() - W.openedAt < 400 && Math.hypot(sx - W.start[0], sy - W.start[1]) < 8;
+      if (quick && !W.hovered) { W.sticky = true; wheelSub.textContent = "Click a choice"; return; } // a quick right-click leaves it open
+      closeWheel(true);
+    });
+    canvas.addEventListener("pointerleave", () => { if (!W.open) { hideGhost(); clearHighlight(); hover = null; } });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
     window.addEventListener("resize", resize);
     requestAnimationFrame(tick);
@@ -967,9 +1165,13 @@ const Builder = (function () {
   // Test hook: lets automated checks drive the builder at a world position instead of a mouse position.
   const testApi = {
     pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by })),
-    setPrefab, setLevel, setTool,
+    setPrefab(prefab) { if (DEPLOYABLES.indexOf(prefab) >= 0) { ui.deploy = prefab; selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
+    setHammer(id) { ui.hammer = id; selectSlot("hammer"); },
+    setLevel, selectSlot,
+    state: () => ({ slot: ui.slot, tool: ui.tool, prefab: ui.prefab, grade: ui.grade, hammer: ui.hammer }),
     newTerrain(seed) { clearAll(); setTerrain(seed); frameBuild(); },
     ground: (x, z) => heightAt(x, z),
+    toScreen(x, y, z) { projV.set(x, y, z).project(camera); return [(projV.x + 1) / 2 * canvas.clientWidth, (1 - projV.y) / 2 * canvas.clientHeight]; },
     placeAt(x, z, y) {
       const k = kindOf(ui.prefab);
       const f = all().find(p => p.kind === "F");
@@ -977,8 +1179,7 @@ const Builder = (function () {
         const by = f ? f.by : heightAt(x, z) - 1;
         y = k === "F" ? (f ? by + 1 : heightAt(x, z)) : by + 1 + 3 * (k === "FL" || k === "RF" ? ui.level + 1 : ui.level);
       }
-      projV.set(x, y, z).project(camera);
-      const sx = (projV.x + 1) / 2 * canvas.clientWidth, sy = (1 - projV.y) / 2 * canvas.clientHeight;
+      const [sx, sy] = testApi.toScreen(x, y, z);
       lastPointer = [sx, sy];
       const c = snap(sx, sy);
       if (!c) return "no-snap";
@@ -994,6 +1195,7 @@ const Builder = (function () {
       active = v;
       if (v && !ready) init();
       if (v) { setXray(false); setRockGhost(false); resize(); updateStats(); }
+      if (!v && W.open) closeWheel(false);
     },
     test: testApi
   };

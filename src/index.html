@@ -75,12 +75,12 @@
   <main class="workspace" id="view-build" hidden>
     <section class="stage" aria-label="Sandbox build area">
       <div class="viewport" id="bviewport">
-        <canvas id="bcanvas" aria-label="3D build area. Click to place, drag to orbit, scroll to zoom."></canvas>
+        <canvas id="bcanvas" aria-label="3D build area. Click to use the selected tool, hold right-click for the wheel, drag to orbit."></canvas>
         <div class="now">
           <div class="now-card">
-            <div class="now-kicker" id="bKicker">Place · Ground floor</div>
+            <div class="now-kicker" id="bKicker">Building Plan · Ground floor</div>
             <div class="now-label" id="bLabel">Foundation</div>
-            <div class="now-sub" id="bHint">Click the ground to place a foundation</div>
+            <div class="now-sub" id="bHint">Point at the ground</div>
           </div>
           <div class="now-card clock">
             <div class="small">BUILD CLOCK</div>
@@ -88,21 +88,34 @@
             <div class="small" id="bCount">0 pieces</div>
           </div>
         </div>
-        <div class="hint">Click to place · Drag to orbit · Right-drag to pan · R rotate · [ ] change floor · Ctrl+Z undo</div>
+
+        <div class="hotbar" id="hotbar" role="group" aria-label="Tools">
+          <button class="slot" type="button" data-slot="plan" aria-pressed="true">
+            <kbd>1</kbd><span class="slot-name">Building Plan</span><span class="slot-sub" id="slotPlanSub">Foundation</span>
+          </button>
+          <button class="slot" type="button" data-slot="hammer" aria-pressed="false">
+            <kbd>2</kbd><span class="slot-name">Hammer</span><span class="slot-sub" id="slotHammerSub">Upgrade to Stone</span>
+          </button>
+          <button class="slot" type="button" data-slot="deploy" aria-pressed="false">
+            <kbd>3</kbd><span class="slot-name">Deployable</span><span class="slot-sub" id="slotDeploySub">Tool Cupboard</span>
+          </button>
+          <button class="slot" type="button" data-slot="tape" aria-pressed="false">
+            <kbd>4</kbd><span class="slot-name">Tape Measure</span><span class="slot-sub">Distance</span>
+          </button>
+        </div>
+
+        <div class="wheel" id="wheel" hidden>
+          <svg id="wheelSvg" viewBox="-244 -244 488 488" aria-hidden="true"></svg>
+          <div class="wheel-center"><span class="wheel-name" id="wheelName">Building Plan</span><span class="wheel-sub" id="wheelSub">Release on a choice</span></div>
+        </div>
       </div>
       <div class="transport">
-        <div class="seg tools" id="toolSeg" role="group" aria-label="Tool">
-          <button type="button" data-tool="place" aria-pressed="true" title="Place (P)">Place</button>
-          <button type="button" data-tool="upgrade" aria-pressed="false" title="Upgrade (U)">Upgrade</button>
-          <button type="button" data-tool="rotate" aria-pressed="false" title="Rotate (O)">Rotate</button>
-          <button type="button" data-tool="demolish" aria-pressed="false" title="Demolish (X)">Demolish</button>
-        </div>
         <div class="lvl" role="group" aria-label="Floor you're building on">
           <button class="tbtn" id="lvlDown" type="button" aria-label="Floor down" title="Floor down ([)">−</button>
           <span id="lvlLabel">Ground floor</span>
           <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
         </div>
-        <span class="spacer"></span>
+        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1–4</b> tools · <b>R</b> rotate · <b>[ ]</b> floor · drag to orbit, middle-drag or Shift+drag to pan</p>
         <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
           <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
         </button>
@@ -126,16 +139,21 @@
         </div>
       </div>
 
-      <div class="card palettes" id="palettes"></div>
+      <div class="card">
+        <h2>Deployables <small>slot 3</small></h2>
+        <div class="palette" id="palDeploy"></div>
+      </div>
 
       <div class="card">
-        <h2>Grade</h2>
-        <div class="palette" id="gradePick"></div>
-        <button class="btn" id="bUpAll" type="button">Upgrade everything to Stone</button>
+        <h2>Whole base</h2>
+        <div class="row">
+          <label class="sel" for="upAllGrade">Upgrade everything to <select id="upAllGrade"></select></label>
+          <button class="btn" id="bUpAll" type="button">Upgrade</button>
+        </div>
         <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above the one I'm on</label>
       </div>
 
-      <p class="note">Pieces snap to each other's edges like in Rust and follow its support rules: walls need a foundation or floor, floors need walls, and anything left unsupported collapses. Foundations sit on the terrain: they can't be buried by a rise or float too high over a dip, and snapped foundations stay level. Deployable sizes are close approximations still being checked against the game. Walk mode and the peek checker are next. Your build is saved in this browser.</p>
+      <p class="note">Pieces snap to each other's edges like in Rust and follow its support rules: walls need a foundation or floor, floors need walls, and anything left unsupported collapses. Foundations sit on the terrain: they can't be buried by a rise or float too high over a dip, and snapped foundations stay level. Deployable sizes are close approximations still being checked against the game. Your build is saved in this browser.</p>
     </aside>
   </main>
 

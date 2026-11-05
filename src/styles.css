@@ -204,7 +204,48 @@ details.fmt p { margin: 8px 0 0; }
 
 /* ---------- Sandbox ---------- */
 .arch-cta { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--muted); }
-.seg.tools button { font-family: var(--font-body); font-size: 12.5px; padding: 7px 11px; }
+.keys { margin: 0; flex: 1 1 260px; min-width: 0; font-size: 12px; color: var(--muted); }
+.keys b { color: var(--fg); font-weight: 500; }
+
+/* Hotbar, like Rust's belt */
+.hotbar {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  display: flex; gap: 6px; max-width: calc(100% - 24px); overflow-x: auto; padding: 2px;
+}
+.slot {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-width: 126px; padding: 8px 10px 7px; border-radius: 8px; text-align: left;
+  background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); color: var(--fg);
+}
+.slot:hover { border-color: var(--line-hi); }
+.slot[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.slot kbd { position: absolute; top: 5px; right: 7px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.slot[aria-pressed="true"] kbd { color: var(--accent); }
+.slot-name { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.02em; padding-right: 14px; white-space: nowrap; }
+.slot-sub { font-size: 11.5px; color: var(--muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Radial wheel */
+.wheel {
+  position: absolute; width: 488px; height: 488px; z-index: 6;
+  transform: translate(-50%, -50%) scale(var(--wheel-scale, 1)); transform-origin: center;
+  touch-action: none; user-select: none;
+}
+.wheel svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.wseg path { fill: rgba(24, 27, 25, 0.88); stroke: var(--line); stroke-width: 1; cursor: pointer; }
+.wseg text { fill: var(--fg); font-family: var(--font-body); font-size: 11.5px; font-weight: 500; text-anchor: middle; pointer-events: none; }
+.wseg.sel path { fill: rgba(62, 55, 33, 0.94); stroke: var(--accent); }
+.wseg.sel text { fill: var(--accent); }
+.wseg.hot path { fill: var(--accent); stroke: var(--accent); }
+.wseg.hot text { fill: var(--accent-ink); }
+.wsw { stroke: rgba(0, 0, 0, 0.35); pointer-events: none; }
+.wheel-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 118px; height: 118px; border-radius: 50%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; gap: 2px; pointer-events: none;
+  background: rgba(24, 27, 25, 0.92); border: 1px solid var(--line);
+}
+.wheel-name { font-family: var(--font-display); font-weight: 600; font-size: 13.5px; line-height: 1.15; padding: 0 8px; text-wrap: balance; }
+.wheel-sub { font-size: 10.5px; color: var(--muted); }
 .lvl { display: inline-flex; align-items: center; gap: 6px; }
 .lvl span { min-width: 92px; text-align: center; font-size: 13px; font-weight: 500; }
 .lvl .tbtn { font-size: 17px; line-height: 1; }
@@ -234,6 +275,10 @@ details.fmt p { margin: 8px 0 0; }
   .side { overflow: visible; }
   .logcard { flex: none; }
   .log { max-height: 340px; }
+}
+@media (max-width: 640px) {
+  .slot { min-width: 84px; padding: 6px 8px; }
+  .slot-sub { display: none; }
 }
 @media (max-width: 420px) {
   .clock { display: none; }

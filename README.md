@@ -4,7 +4,7 @@ A web archive where Rust base builders showcase their bases as 3D replays: every
 
 ## What's here
 
-- **Sandbox** – build a base in the browser with Rust’s building pieces: square and triangle foundations and floors, foundation steps, all wall types, floor frames, U/L/spiral/triangle-spiral stairs, ramps, roofs and triangle roofs. Pieces snap on shared 3 m edges like in Rust, with its support rules (walls need foundations or floors, floors need walls, unsupported pieces collapse). Place, upgrade, rotate, demolish, undo; saved in your browser; one click to watch it as a replay.
+- **Sandbox** – build a base in the browser on randomized, never-flat terrain, with Rust-style controls (hotbar: 1 Building Plan, 2 Hammer, 3 Deployable, 4 Tape Measure; hold right-click for the radial wheel) and Rust’s building pieces: square and triangle foundations and floors, foundation steps, all wall types, floor frames, U/L/spiral/triangle-spiral stairs, ramps, roofs and triangle roofs. Pieces snap on shared 3 m edges like in Rust, with its support rules (walls need foundations or floors, floors need walls, unsupported pieces collapse). Place, upgrade, rotate, demolish, undo; saved in your browser; one click to watch it as a replay.
 - **Archive** – gallery of bases with terrain filters (open ground, rock, cave, cliff) and group size.
 - **Base page** – the replay viewer: timeline scrubber, step forward/back, 1×–64× speed, clean replay (hides demolished mistakes), skip idle time, X-ray walls, see-through rock, floor cutaways, clickable build log.
 - **Terrain and formations** – heightmap terrain plus stand-in models for anvil rocks, cliffs and caves.
