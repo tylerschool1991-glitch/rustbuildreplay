@@ -20,7 +20,8 @@ const Builder = (function () {
     "wall", "wall.doorway", "wall.window", "wall.frame", "wall.half", "wall.low",
     "block.stair.ushape", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp", "roof", "roof.triangle"
   ];
-  const DEPLOYABLES = ["door.hinged.metal", "cupboard.tool.deployed", "box.wooden.large", "furnace", "sleepingbag_leather_deployed"];
+  const SOCKET_WALL = { doorway: "wall.doorway", frame: "wall.frame", window: "wall.window" };
+  const placeOf = prefab => (CATALOG_BY_ID[prefab] ? CATALOG_BY_ID[prefab].place : "free");
   const DESC = {
     "foundation": "Every base starts here. Snaps edge to edge.",
     "foundation.triangle": "Fills angles and builds honeycomb.",
@@ -48,6 +49,11 @@ const Builder = (function () {
     "furnace": "Smelts ore.",
     "sleepingbag_leather_deployed": "A place to respawn."
   };
+  function describe(id) {
+    if (DESC[id]) return DESC[id];
+    const c = CATALOG_BY_ID[id];
+    return c ? c.w + " × " + c.d + " × " + c.h + " m (estimate until measured)" : "";
+  }
   const HAMMER = [
     { id: "wood", name: "Upgrade to Wood", desc: "Hit a piece to upgrade it to wood." },
     { id: "stone", name: "Upgrade to Stone", desc: "Hit a piece to upgrade it to stone." },
@@ -57,13 +63,6 @@ const Builder = (function () {
     { id: "demolish", name: "Demolish", desc: "Remove the piece you hit and anything it was holding up." }
   ];
   const SLOTS = ["plan", "hammer", "deploy"];
-  // Deployable footprints in metres (width along local x, depth along local z). Approximate; to be checked in-game.
-  const FOOTPRINT = {
-    "cupboard.tool.deployed": [0.96, 0.6],
-    "box.wooden.large": [1.3, 0.75],
-    "furnace": [0.85, 0.85],
-    "sleepingbag_leather_deployed": [0.8, 1.9]
-  };
   const STORE_KEY = "buildreplay.sandbox.v3";
   const MAX_LEVEL = 5;
   const FOUNDATION_DEPTH = 4; // the foundation model reaches 4 m below its top
@@ -74,8 +73,9 @@ const Builder = (function () {
     FL: "Floors need a full wall underneath on at least one edge",
     RF: "Roofs need a full wall underneath on at least one edge",
     S: "Stairs need a foundation or solid floor of the same shape",
-    D: "Doors go in a doorway",
-    X: "Place it on a foundation or solid floor, clear of stairs"
+    D: "This goes in a matching wall opening",
+    H: "This goes in a floor frame of the same shape",
+    X: "Place it on a foundation, a solid floor or the ground"
   };
   const NO_SNAP = {
     F: "Point at the ground",
@@ -84,8 +84,9 @@ const Builder = (function () {
     FL: "Point above a room with walls, or next to another floor",
     RF: "Point above a room with walls",
     S: "Point at a foundation or solid floor of the same shape",
-    D: "Point at a doorway",
-    X: "Point at a foundation or solid floor on this level"
+    D: "Point at a matching wall opening on this floor",
+    H: "Point at a floor frame of the same shape",
+    X: "Point at a foundation, a solid floor or the ground"
   };
 
   const kindOf = prefab =>
@@ -95,7 +96,8 @@ const Builder = (function () {
     SHAPE[prefab] && prefab.indexOf("floor") === 0 ? "FL" :
     SHAPE[prefab] ? "S" :
     WALLS.has(prefab) ? "W" :
-    prefab === "door.hinged.metal" ? "D" : "X";
+    SOCKET_WALL[placeOf(prefab)] ? "D" :
+    placeOf(prefab).indexOf("hatch") === 0 ? "H" : "X";
 
   // ---------- Geometry ----------
   const rad = d => d * Math.PI / 180;
@@ -231,7 +233,7 @@ const Builder = (function () {
   let renderer, scene, camera, controls, root, ghost = null, ghostPrefab = null;
 
   const S = { pieces: new Map(), sock: new Map(), events: [], nextId: 1, alias: new Map(), undo: [], redo: [], baseT: 0, resumeAt: null, name: "" };
-  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
+  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", recent: ["cupboard.tool.deployed", "box.wooden.large", "door.hinged.metal", "furnace", "sleepingbag_leather_deployed", "autoturret", "workbench1", "generator.wind.scrap"], cat: "Items", search: "", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
   let hover = null, lastPointer = null, highlighted = null, flashTimer = null;
 
   const all = () => Array.from(S.pieces.values());
@@ -245,6 +247,7 @@ const Builder = (function () {
       case "S": return "S" + fpKey(p.cx, p.cz, Hof(p));
       case "W": return edgeKey(p, Hof(p));
       case "D": return "D" + edgeKey(p, Hof(p));
+      case "H": return "H" + fpKey(p.cx, p.cz, Hof(p));
       case "FS": return "FS" + edgeKey(p, Hof(p));
       default: return null;
     }
@@ -252,7 +255,7 @@ const Builder = (function () {
   function posOf(p) {
     switch (p.kind) {
       case "F": return [p.cx, p.by, p.cz];
-      case "FL": case "RF": case "S": return [p.cx, Hof(p), p.cz];
+      case "FL": case "RF": case "S": case "H": return [p.cx, Hof(p), p.cz];
       case "W": case "D": return [p.mx, Hof(p), p.mz];
       case "FS": return [p.mx, p.by, p.mz];
       default: return [p.x, Hof(p), p.z];
@@ -260,10 +263,10 @@ const Builder = (function () {
   }
   function polyOf(p) {
     switch (p.kind) {
-      case "F": case "FL": case "RF": case "S": return shapeVerts(p.shape, p.cx, p.cz, p.theta);
+      case "F": case "FL": case "RF": case "S": case "H": return shapeVerts(p.shape, p.cx, p.cz, p.theta);
       case "W": case "D": return rectPoly(p.mx, p.mz, 3, 0.25, wallRot(p.a));
       case "FS": return rectPoly(p.mx + p.nx * 0.75, p.mz + p.nz * 0.75, 3, 1.5, wallRot(p.a));
-      default: { const fp = FOOTPRINT[p.prefab] || [0.8, 0.8]; return rectPoly(p.x, p.z, fp[0], fp[1], p.rot); }
+      default: { const c = CATALOG_BY_ID[p.prefab] || { w: 0.8, d: 0.8 }; return rectPoly(p.x, p.z, c.w, c.d, p.rot); }
     }
   }
   function overlapsAny(poly, filter, inset) {
@@ -283,7 +286,7 @@ const Builder = (function () {
   }
   function deployBlocked(p) {
     const H = Hof(p);
-    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && (o.kind === "X" || o.kind === "W") && sameH(Hof(o), H), 0.005);
+    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && (o.kind === "X" || o.kind === "W") && !o.ground && sameH(Hof(o), H), 0.005);
     if (!hit) return null;
     return hit.kind === "W" ? "Too close to a wall" : "Overlaps the " + prefabName(hit.prefab).toLowerCase();
   }
@@ -296,8 +299,9 @@ const Builder = (function () {
       case "W": return surfaceHasEdge(edgeKey(p, H)) || (p.L > 0 && fullWallAt(p, H - 3));
       case "FL": case "RF": return edgesOf(p).some(e => fullWallAt(e, H - 3));
       case "S": { const s = get(fpKey(p.cx, p.cz, H)); return isSolidSurface(s) && s.shape === p.shape; }
-      case "D": { const w = get(edgeKey(p, H)); return !!(w && w.prefab === "wall.doorway"); }
-      default: return deployOk(p);
+      case "D": { const w = get(edgeKey(p, H)); return !!(w && w.prefab === SOCKET_WALL[placeOf(p.prefab)]); }
+      case "H": { const f = get(fpKey(p.cx, p.cz, H)); return !!(f && f.prefab === (p.shape === "tri" ? "floor.triangle.frame" : "floor.frame")); }
+      default: return p.ground ? true : deployOk(p);
     }
   }
 
@@ -323,6 +327,13 @@ const Builder = (function () {
     if (c.kind === "S") {
       if (get(fpKey(c.cx, c.cz, H + 3))) return "Stairs need an opening above; remove that floor first";
       if (overlapsAny(poly, o => o.kind === "X" && sameH(Hof(o), H))) return "Clear the items off this floor first";
+    }
+    if (c.kind === "X" && c.ground) {
+      const g = groundUnder(poly);
+      if (g.max - g.min > 0.8) return "Too steep here";
+      const hit = overlapsAny(poly, o => o.kind === "F" || o.kind === "FS" || (o.kind === "X" && o.ground), 0.01);
+      if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
+      return null;
     }
     if (!supported(c)) return REASON[c.kind];
     if (c.kind === "X") { const b = deployBlocked(c); if (b) return b; }
@@ -436,15 +447,32 @@ const Builder = (function () {
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(wallRot(best.a) + (ui.rot % 2 ? 180 : 0)) };
     } else if (kind === "D") {
-      const L = ui.level;
-      const opts = all().filter(o => o.kind === "W" && o.L === L && o.prefab === "wall.doorway")
-        .map(o => ({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz, by: o.by, rot: o.rot, ref: [o.mx, Hof(o) + 1, o.mz] }));
+      const L = ui.level, wallType = SOCKET_WALL[placeOf(prefab)];
+      const opts = all().filter(o => o.kind === "W" && o.L === L && o.prefab === wallType)
+        .map(o => ({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz, by: o.by, rot: o.rot, ref: [o.mx, Hof(o) + 1.2, o.mz] }));
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(best.rot + (ui.rot % 2 ? 180 : 0)) };
+    } else if (kind === "H") {
+      const frameType = placeOf(prefab) === "hatch.tri" ? "floor.triangle.frame" : "floor.frame";
+      const opts = all().filter(o => o.prefab === frameType && o.mesh.visible)
+        .map(o => ({ shape: o.shape, L: o.L, by: o.by, cx: o.cx, cz: o.cz, theta: o.theta, rot: o.rot, ref: [o.cx, Hof(o), o.cz] }));
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { shape: best.shape, L: best.L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: best.rot };
     } else {
+      const rot = norm(ui.rot * 90);
       const hit = pieceUnder(sx, sy, p => isSolidSurface(p) && p.L === ui.level);
       if (hit) {
-        c = { L: ui.level, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot: norm(ui.rot * 90) };
+        c = { L: ui.level, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot };
+      } else if (ui.level === 0 && terrainMesh) {
+        // Most deployables can also go straight on the ground, like in Rust.
+        setRay(sx, sy);
+        const t = ray.intersectObject(terrainMesh)[0];
+        if (t) {
+          const x = Math.round(t.point.x * 4) / 4, z = Math.round(t.point.z * 4) / 4;
+          const cat = CATALOG_BY_ID[prefab] || { w: 0.8, d: 0.8 };
+          const g = groundUnder(rectPoly(x, z, cat.w, cat.d, rot));
+          c = { L: 0, by: R2(g.max - 1), x, z, rot, ground: true };
+        }
       }
     }
     if (!c) return null;
@@ -582,7 +610,7 @@ const Builder = (function () {
   }
   function actRotate(id) {
     const p = S.pieces.get(id);
-    if (p.kind === "F" || p.kind === "FL" || p.kind === "FS") return flash(prefabName(p.prefab) + " doesn't rotate");
+    if (p.kind === "F" || p.kind === "FL" || p.kind === "FS" || p.kind === "H") return flash(prefabName(p.prefab) + " doesn't rotate");
     const step = p.kind === "W" || p.kind === "D" ? 180 : p.kind === "X" ? 90 : TURN[p.shape];
     const old = p.rot, nr = norm(old - step);
     if (p.kind === "X") {
@@ -759,9 +787,9 @@ const Builder = (function () {
     return '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="9" width="30" height="30" rx="3" style="fill:' + GRADES[g].hex + '"/><path d="M9 19h30M9 29h30M19 9v10M29 19v10M19 29v10"/></svg>';
   }
   function wheelItems() {
-    if (ui.slot === "plan") return PLAN.map(id => ({ id, name: prefabName(id), desc: DESC[id], icon: isoIcon(id) }));
+    if (ui.slot === "plan") return PLAN.map(id => ({ id, name: prefabName(id), desc: describe(id), icon: isoIcon(id) }));
     if (ui.slot === "hammer") return HAMMER.map(h => Object.assign({}, h, { icon: GRADES[h.id] ? gradeIcon(h.id) : GLYPHS[h.id] }));
-    return DEPLOYABLES.map(id => ({ id, name: prefabName(id), desc: DESC[id], icon: isoIcon(id) }));
+    return ui.recent.map(id => ({ id, name: prefabName(id), desc: describe(id), icon: isoIcon(id) }));
   }
   const selectedId = () => (ui.slot === "plan" ? ui.plan : ui.slot === "hammer" ? ui.hammer : ui.deploy);
   function arcPath(r0, r1, a0, a1) {
@@ -850,7 +878,7 @@ const Builder = (function () {
   function chooseFromWheel(id) {
     if (ui.slot === "plan") ui.plan = id;
     else if (ui.slot === "hammer") ui.hammer = id;
-    else if (ui.slot === "deploy") ui.deploy = id;
+    else if (ui.slot === "deploy") pickDeployable(id);
     selectSlot(ui.slot);
   }
 
@@ -888,7 +916,7 @@ const Builder = (function () {
     $("slotDeploySub").textContent = prefabName(ui.deploy);
     $("slotDeployIcon").innerHTML = isoIcon(ui.deploy);
     document.querySelectorAll(".slot").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.slot === ui.slot)));
-    document.querySelectorAll("#deployDock .dock-item").forEach(b => b.setAttribute("aria-pressed", String(ui.slot === "deploy" && b.dataset.prefab === ui.deploy)));
+    document.querySelectorAll("#deployList .dock-item").forEach(b => b.setAttribute("aria-pressed", String(ui.slot === "deploy" && b.dataset.prefab === ui.deploy)));
   }
   function updateStats() {
     let pieces = 0, deploy = 0;
@@ -909,6 +937,10 @@ const Builder = (function () {
     save();
   }
 
+  function pickDeployable(id) {
+    ui.deploy = id;
+    ui.recent = [id].concat(ui.recent.filter(x => x !== id)).slice(0, 8);
+  }
   function selectSlot(slot) {
     const prevPrefab = ui.prefab;
     ui.slot = slot;
@@ -955,18 +987,51 @@ const Builder = (function () {
     });
   }
 
-  function buildPanels() {
-    DEPLOYABLES.forEach(prefab => {
+  // Deployables window: category tabs, search, scrolling list of every item.
+  function renderDeployList() {
+    const list = $("deployList");
+    list.innerHTML = "";
+    const term = ui.search.trim().toLowerCase();
+    const items = CATALOG.filter(c => term ? (c.name.toLowerCase().indexOf(term) >= 0 || c.id.indexOf(term) >= 0) : c.cat === ui.cat);
+    items.forEach(c => {
       const b = el("button", "dock-item");
       b.type = "button";
-      b.dataset.prefab = prefab;
-      b.title = prefabName(prefab);
-      b.setAttribute("aria-pressed", "false");
-      const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(prefab);
-      b.append(ic, el("span", "dock-name", prefabName(prefab)));
-      b.addEventListener("click", () => { ui.deploy = prefab; selectSlot("deploy"); });
-      $("deployDock").appendChild(b);
+      b.dataset.prefab = c.id;
+      b.title = c.name + " · " + c.w + " × " + c.d + " × " + c.h + " m (estimate)";
+      b.setAttribute("aria-pressed", String(ui.slot === "deploy" && c.id === ui.deploy));
+      const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(c.id);
+      const txt = el("span", "dock-text");
+      txt.append(el("span", "dock-name", c.name), el("span", "dock-meta", (term ? c.cat + " · " : "") + MOUNT[c.place]));
+      b.append(ic, txt);
+      b.addEventListener("click", () => { pickDeployable(c.id); selectSlot("deploy"); });
+      list.appendChild(b);
     });
+    if (!items.length) list.appendChild(el("p", "dock-empty", "Nothing matches “" + ui.search.trim() + "”."));
+    document.querySelectorAll("#deployTabs button").forEach(b => b.setAttribute("aria-pressed", String(!term && b.dataset.cat === ui.cat)));
+    $("deployCount").textContent = items.length + (items.length === 1 ? " item" : " items");
+  }
+  const MOUNT = { free: "Floor or ground", doorway: "Doorway", frame: "Wall frame", window: "Window", hatch: "Floor frame", "hatch.tri": "Triangle floor frame" };
+  function buildDeployWindow() {
+    const tabs = $("deployTabs");
+    DEPLOY_CATS.forEach(cat => {
+      const b = el("button", null, cat);
+      b.type = "button";
+      b.dataset.cat = cat;
+      b.addEventListener("click", () => { ui.cat = cat; ui.search = ""; $("deploySearch").value = ""; renderDeployList(); $("deployList").scrollTop = 0; });
+      tabs.appendChild(b);
+    });
+    $("deploySearch").addEventListener("input", e => { ui.search = e.target.value; renderDeployList(); });
+    $("deployToggle").addEventListener("click", () => {
+      const win = $("deployWin");
+      const open = win.classList.toggle("collapsed") === false;
+      $("deployToggle").setAttribute("aria-expanded", String(open));
+      $("deployToggle").textContent = open ? "Hide" : "Show";
+    });
+    renderDeployList();
+  }
+
+  function buildPanels() {
+    buildDeployWindow();
     $("slotPlanIcon").innerHTML = GLYPHS.plan;
     $("slotHammerIcon").innerHTML = GLYPHS.hammer;
     GRADE_ORDER.forEach(g => {
@@ -1136,7 +1201,7 @@ const Builder = (function () {
   // Test hook: lets automated checks drive the builder at a world position instead of a mouse position.
   const testApi = {
     pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by })),
-    setPrefab(prefab) { if (DEPLOYABLES.indexOf(prefab) >= 0) { ui.deploy = prefab; selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
+    setPrefab(prefab) { if (CATALOG_BY_ID[prefab]) { pickDeployable(prefab); selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
     setHammer(id) { ui.hammer = id; selectSlot("hammer"); },
     setLevel, selectSlot,
     state: () => ({ slot: ui.slot, tool: ui.tool, prefab: ui.prefab, grade: ui.grade, hammer: ui.hammer }),

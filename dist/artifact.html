@@ -217,6 +217,7 @@ details.fmt p { margin: 8px 0 0; }
 .workspace.sandbox { grid-template-columns: minmax(0, 1fr); }
 .tool-card { position: absolute; top: 12px; left: 12px; max-width: min(360px, calc(100% - 24px)); pointer-events: none; }
 .base-card {
+  z-index: 2;
   position: absolute; top: 12px; right: 12px; width: 300px; max-width: calc(100% - 24px);
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); border-radius: 8px;
@@ -228,20 +229,49 @@ details.fmt p { margin: 8px 0 0; }
 .upall { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
 .upall .btn { padding: 5px 9px; font-size: 12px; }
 
-/* Deployables down the right edge of the screen */
-.dock {
-  position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px;
+/* Deployables window down the right side of the screen */
+.deploy-win {
+  position: absolute; right: 12px; top: 214px; bottom: 12px; width: 300px; max-width: calc(100% - 24px);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: rgba(24, 27, 25, 0.88); border: 1px solid var(--line); border-radius: 8px;
 }
+.deploy-win.collapsed { bottom: auto; }
+.deploy-win.collapsed .deploy-body { display: none; }
+.deploy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.deploy-head h2 {
+  margin: 0; font-family: var(--font-display); font-size: 12.5px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.deploy-head h2 small { font-family: var(--font-mono); letter-spacing: 0.02em; text-transform: none; font-weight: 400; margin-left: 6px; }
+.deploy-head .btn { padding: 4px 9px; font-size: 12px; }
+.deploy-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+.deploy-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.deploy-tabs button {
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; color: var(--muted);
+}
+.deploy-tabs button[aria-pressed="true"] { background: var(--wheel-red); border-color: var(--wheel-red); color: #fff; }
+.deploy-win .field { padding: 6px 9px; font-size: 13px; }
+.deploy-list {
+  flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+  padding-right: 4px; scrollbar-width: thin; scrollbar-color: var(--line-hi) transparent;
+}
+.deploy-list::-webkit-scrollbar { width: 8px; }
+.deploy-list::-webkit-scrollbar-thumb { background: var(--line-hi); border-radius: 4px; }
 .dock-item {
-  display: flex; align-items: center; gap: 8px; width: 168px; padding: 4px 10px 4px 4px;
-  background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); border-radius: 8px; text-align: left;
-  color: var(--fg); --icon-bg: rgba(24, 27, 25, 1);
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px 4px 4px; flex: none;
+  background: var(--panel-2); border: 1px solid transparent; border-radius: 6px; text-align: left;
+  color: var(--fg); --icon-bg: var(--panel-2);
 }
 .dock-item:hover { border-color: var(--line-hi); }
 .dock-item[aria-pressed="true"] { border-color: var(--wheel-red); box-shadow: inset 0 0 0 1px var(--wheel-red); }
-.dock-icon { width: 38px; height: 38px; flex: none; color: var(--wheel-cream); }
+.dock-icon { width: 36px; height: 36px; flex: none; color: var(--wheel-cream); }
 .dock-icon svg { width: 100%; height: 100%; display: block; }
+.dock-text { display: flex; flex-direction: column; min-width: 0; }
 .dock-name { font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-meta { font-size: 11px; color: var(--muted); }
+.dock-empty { margin: 8px 4px; font-size: 12.5px; color: var(--muted); }
+.deploy-note { margin: 0; font-size: 11px; color: var(--muted); }
 
 /* Hotbar, like Rust's belt */
 .hotbar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 6px; }
@@ -309,8 +339,8 @@ details.fmt p { margin: 8px 0 0; }
 @media (max-width: 760px) {
   .slot { width: 64px; height: 64px; }
   .slot-icon { width: 36px; height: 36px; }
-  .slot-sub, .dock-name { display: none; }
-  .dock-item { width: auto; padding: 4px; }
+  .slot-sub { display: none; }
+  .deploy-win { top: auto; width: 230px; max-height: 46%; }
   .base-card { top: 8px; right: 8px; width: 46%; padding: 8px; }
   .base-card .gbar, .base-stats, .base-actions .btn:not(.primary), .upall { display: none; }
   .tool-card { top: 8px; left: 8px; max-width: 48%; }
@@ -420,7 +450,18 @@ details.fmt p { margin: 8px 0 0; }
           </div>
         </div>
 
-        <div class="dock" id="deployDock" role="group" aria-label="Deployables"></div>
+        <section class="deploy-win" id="deployWin" aria-label="Deployables">
+          <div class="deploy-head">
+            <h2>Deployables <small id="deployCount"></small></h2>
+            <button class="btn" id="deployToggle" type="button" aria-expanded="true" aria-controls="deployBody">Hide</button>
+          </div>
+          <div class="deploy-body" id="deployBody">
+            <div class="deploy-tabs" id="deployTabs" role="group" aria-label="Categories"></div>
+            <input class="field" id="deploySearch" type="search" placeholder="Search all items" autocomplete="off" aria-label="Search deployables">
+            <div class="deploy-list" id="deployList"></div>
+            <p class="deploy-note">Sizes are estimates until measured from the game.</p>
+          </div>
+        </section>
 
         <div class="hotbar" id="hotbar" role="group" aria-label="Tools">
           <button class="slot" type="button" data-slot="plan" aria-pressed="true" title="Building Plan (1)">
@@ -716,6 +757,143 @@ function fillGradeBar(bar, grades) {
   bar.setAttribute("role", "img");
 }
 
+// ---------- Deployables catalog ----------
+// Every placeable item, grouped like Rust's crafting menu. Sizes are in metres (w along the item's front,
+// d front-to-back, h tall) and are ESTIMATES until replaced with numbers measured from the game
+// (plugin/BuildReplayMeasure.cs). place: free (floor, foundation or ground), doorway, frame (double-door
+// wall frame), window, hatch / hatch.tri (square or triangle floor frame).
+const DEPLOY_CATS = ["Construction", "Items", "Electrical", "Traps", "Fun"];
+const CATALOG = [
+  // Construction
+  ["door.hinged.wood", "Wooden Door", "Construction", 1.14, 0.08, 2.15, "doorway"],
+  ["door.hinged.metal", "Sheet Metal Door", "Construction", 1.14, 0.08, 2.15, "doorway"],
+  ["door.hinged.toptier", "Armored Door", "Construction", 1.14, 0.12, 2.15, "doorway"],
+  ["door.double.hinged.wood", "Wood Double Door", "Construction", 2.36, 0.08, 2.6, "frame"],
+  ["door.double.hinged.metal", "Sheet Metal Double Door", "Construction", 2.36, 0.08, 2.6, "frame"],
+  ["door.double.hinged.toptier", "Armored Double Door", "Construction", 2.36, 0.12, 2.6, "frame"],
+  ["wall.frame.garagedoor", "Garage Door", "Construction", 2.36, 0.15, 2.6, "frame"],
+  ["wall.frame.netting", "Netting", "Construction", 2.36, 0.05, 2.6, "frame"],
+  ["wall.frame.cell", "Prison Cell Wall", "Construction", 2.36, 0.1, 2.6, "frame"],
+  ["wall.frame.cell.gate", "Prison Cell Gate", "Construction", 2.36, 0.1, 2.6, "frame"],
+  ["wall.frame.fence", "Chainlink Fence", "Construction", 2.36, 0.05, 2.6, "frame"],
+  ["wall.frame.fence.gate", "Chainlink Fence Gate", "Construction", 2.36, 0.05, 2.6, "frame"],
+  ["wall.frame.shopfront", "Wood Shop Front", "Construction", 2.36, 0.2, 2.6, "frame"],
+  ["wall.frame.shopfront.metal", "Metal Shop Front", "Construction", 2.36, 0.2, 2.6, "frame"],
+  ["wall.window.bars.wood", "Wooden Window Bars", "Construction", 1.0, 0.08, 0.9, "window"],
+  ["wall.window.bars.metal", "Metal Window Bars", "Construction", 1.0, 0.08, 0.9, "window"],
+  ["wall.window.bars.toptier", "Reinforced Window Bars", "Construction", 1.0, 0.1, 0.9, "window"],
+  ["wall.window.glass.reinforced", "Strengthened Glass Window", "Construction", 1.0, 0.08, 0.9, "window"],
+  ["shutter.wood.a", "Wood Shutters", "Construction", 1.0, 0.1, 0.9, "window"],
+  ["shutter.metal.embrasure.a", "Metal Horizontal Embrasure", "Construction", 1.0, 0.1, 0.9, "window"],
+  ["shutter.metal.embrasure.b", "Metal Vertical Embrasure", "Construction", 1.0, 0.1, 0.9, "window"],
+  ["floor.ladder.hatch", "Ladder Hatch", "Construction", 1.6, 1.6, 0.12, "hatch"],
+  ["floor.triangle.ladder.hatch", "Triangle Ladder Hatch", "Construction", 1.2, 1.2, 0.12, "hatch.tri"],
+  ["floor.grill", "Floor Grill", "Construction", 2.36, 2.36, 0.08, "hatch"],
+  ["floor.triangle.grill", "Triangle Floor Grill", "Construction", 1.7, 1.5, 0.08, "hatch.tri"],
+  ["ladder.wooden.wall", "Wooden Ladder", "Construction", 0.8, 0.25, 4.0, "free"],
+  ["wall.external.high", "High External Wooden Wall", "Construction", 6.0, 0.7, 6.0, "free"],
+  ["wall.external.high.stone", "High External Stone Wall", "Construction", 6.0, 0.8, 6.0, "free"],
+  ["gates.external.high.wood", "High External Wooden Gate", "Construction", 6.0, 0.7, 6.0, "free"],
+  ["gates.external.high.stone", "High External Stone Gate", "Construction", 6.0, 0.8, 6.0, "free"],
+  ["barricade.wood", "Wooden Barricade", "Construction", 2.0, 0.6, 1.2, "free"],
+  ["barricade.woodwire", "Barbed Wooden Barricade", "Construction", 2.0, 0.6, 1.2, "free"],
+  ["barricade.cover.wood", "Wooden Barricade Cover", "Construction", 2.0, 0.3, 1.0, "free"],
+  ["barricade.stone", "Stone Barricade", "Construction", 2.0, 1.0, 1.0, "free"],
+  ["barricade.concrete", "Concrete Barricade", "Construction", 2.5, 1.0, 1.2, "free"],
+  ["barricade.sandbags", "Sandbag Barricade", "Construction", 2.5, 0.8, 1.0, "free"],
+  ["barricade.metal", "Metal Barricade", "Construction", 2.0, 0.4, 1.5, "free"],
+  // Items
+  ["cupboard.tool.deployed", "Tool Cupboard", "Items", 0.96, 0.6, 1.08, "free"],
+  ["box.wooden", "Wood Storage Box", "Items", 0.9, 0.55, 0.55, "free"],
+  ["box.wooden.large", "Large Wood Box", "Items", 1.3, 0.75, 0.7, "free"],
+  ["locker", "Locker", "Items", 1.2, 0.5, 2.0, "free"],
+  ["fridge", "Fridge", "Items", 0.9, 0.7, 1.9, "free"],
+  ["coffin.storage", "Coffin", "Items", 0.8, 2.1, 0.6, "free"],
+  ["dropbox", "Drop Box", "Items", 0.6, 0.4, 0.9, "free"],
+  ["mailbox", "Mail Box", "Items", 0.5, 0.5, 1.2, "free"],
+  ["vending.machine", "Vending Machine", "Items", 1.2, 0.9, 2.2, "free"],
+  ["stash.small", "Small Stash", "Items", 0.4, 0.4, 0.2, "free"],
+  ["workbench1", "Workbench Level 1", "Items", 1.4, 0.75, 0.9, "free"],
+  ["workbench2", "Workbench Level 2", "Items", 2.2, 1.0, 1.2, "free"],
+  ["workbench3", "Workbench Level 3", "Items", 2.6, 1.6, 1.5, "free"],
+  ["research.table", "Research Table", "Items", 1.5, 0.8, 1.0, "free"],
+  ["box.repair.bench", "Repair Bench", "Items", 1.6, 0.9, 1.1, "free"],
+  ["furnace", "Furnace", "Items", 0.85, 0.85, 1.3, "free"],
+  ["furnace.large", "Large Furnace", "Items", 2.2, 2.2, 3.4, "free"],
+  ["small.oil.refinery", "Small Oil Refinery", "Items", 1.3, 1.3, 2.0, "free"],
+  ["campfire", "Camp Fire", "Items", 1.0, 1.0, 0.4, "free"],
+  ["bbq", "Barbeque", "Items", 1.2, 0.6, 1.0, "free"],
+  ["fireplace.stone", "Stone Fireplace", "Items", 1.8, 1.0, 2.0, "free"],
+  ["sleepingbag_leather_deployed", "Sleeping Bag", "Items", 0.8, 1.9, 0.12, "free"],
+  ["bed", "Bed", "Items", 1.4, 2.2, 0.6, "free"],
+  ["water.barrel", "Water Barrel", "Items", 0.8, 0.8, 1.1, "free"],
+  ["water.catcher.small", "Small Water Catcher", "Items", 1.2, 1.2, 0.9, "free"],
+  ["water.catcher.large", "Large Water Catcher", "Items", 2.4, 2.4, 1.6, "free"],
+  ["water.purifier", "Water Purifier", "Items", 0.9, 0.9, 1.0, "free"],
+  ["mixingtable", "Mixing Table", "Items", 1.6, 0.8, 1.0, "free"],
+  ["composter", "Composter", "Items", 1.0, 1.0, 1.2, "free"],
+  ["planter.small", "Small Planter Box", "Items", 2.6, 0.9, 0.6, "free"],
+  ["planter.large", "Large Planter Box", "Items", 2.6, 2.6, 0.6, "free"],
+  ["hitchtroughcombo", "Hitch & Trough", "Items", 2.8, 0.9, 1.4, "free"],
+  ["lantern", "Lantern", "Items", 0.3, 0.3, 0.5, "free"],
+  ["table", "Table", "Items", 1.8, 1.0, 0.8, "free"],
+  ["chair", "Chair", "Items", 0.6, 0.6, 1.0, "free"],
+  ["shelves", "Salvaged Shelves", "Items", 1.6, 0.5, 2.0, "free"],
+  ["rug", "Rug", "Items", 2.5, 1.8, 0.03, "free"],
+  // Electrical
+  ["generator.wind.scrap", "Wind Turbine", "Electrical", 3.0, 3.0, 12.0, "free"],
+  ["electric.solarpanel.large", "Large Solar Panel", "Electrical", 2.4, 2.4, 1.6, "free"],
+  ["electric.fuelgenerator.small", "Small Generator", "Electrical", 1.0, 0.7, 0.8, "free"],
+  ["electric.battery.rechargable.small", "Small Rechargeable Battery", "Electrical", 0.5, 0.3, 0.4, "free"],
+  ["electric.battery.rechargable.medium", "Medium Rechargeable Battery", "Electrical", 0.8, 0.5, 0.8, "free"],
+  ["electric.battery.rechargable.large", "Large Rechargeable Battery", "Electrical", 1.5, 0.9, 1.4, "free"],
+  ["electric.switch", "Switch", "Electrical", 0.25, 0.12, 0.3, "free"],
+  ["electric.splitter", "Splitter", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.blocker", "Blocker", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electrical.branch", "Electrical Branch", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electrical.combiner", "Root Combiner", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.andswitch", "AND Switch", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.orswitch", "OR Switch", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.xorswitch", "XOR Switch", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.counter", "Counter", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.timer", "Timer", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.doorcontroller", "Door Controller", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.rf.broadcaster", "RF Broadcaster", "Electrical", 0.4, 0.3, 0.5, "free"],
+  ["electric.rf.receiver", "RF Receiver", "Electrical", 0.4, 0.3, 0.5, "free"],
+  ["electric.pressurepad", "Pressure Pad", "Electrical", 1.0, 1.0, 0.05, "free"],
+  ["electric.laserdetector", "Laser Detector", "Electrical", 0.3, 0.2, 0.3, "free"],
+  ["electric.hbhfsensor", "HBHF Sensor", "Electrical", 0.3, 0.2, 0.3, "free"],
+  ["smart.switch", "Smart Switch", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["smart.alarm", "Smart Alarm", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["storage.monitor", "Storage Monitor", "Electrical", 0.3, 0.12, 0.3, "free"],
+  ["electric.audioalarm", "Audio Alarm", "Electrical", 0.3, 0.2, 0.3, "free"],
+  ["ceilinglight", "Ceiling Light", "Electrical", 0.5, 0.5, 0.4, "free"],
+  ["electric.flasherlight", "Flasher Light", "Electrical", 0.3, 0.3, 0.3, "free"],
+  ["electric.sirenlight", "Siren Light", "Electrical", 0.3, 0.3, 0.3, "free"],
+  ["searchlight", "Search Light", "Electrical", 0.8, 0.8, 1.4, "free"],
+  ["electric.heater", "Electric Heater", "Electrical", 0.8, 0.4, 0.8, "free"],
+  ["electric.igniter", "Igniter", "Electrical", 0.3, 0.3, 0.3, "free"],
+  ["electric.teslacoil", "Tesla Coil", "Electrical", 0.8, 0.8, 1.6, "free"],
+  ["electric.sprinkler", "Sprinkler", "Electrical", 0.3, 0.3, 0.4, "free"],
+  ["waterpump", "Water Pump", "Electrical", 1.0, 1.0, 1.2, "free"],
+  // Traps
+  ["autoturret", "Auto Turret", "Traps", 0.9, 0.9, 1.1, "free"],
+  ["flameturret", "Flame Turret", "Traps", 0.9, 0.9, 1.2, "free"],
+  ["guntrap", "Shotgun Trap", "Traps", 0.7, 0.7, 0.9, "free"],
+  ["sam.site", "SAM Site", "Traps", 2.4, 2.4, 2.6, "free"],
+  ["landmine", "Land Mine", "Traps", 0.4, 0.4, 0.08, "free"],
+  ["trap.bear", "Snap Trap", "Traps", 0.6, 0.6, 0.1, "free"],
+  ["spikes.floor", "Wooden Floor Spikes", "Traps", 2.0, 2.0, 0.4, "free"],
+  // Fun
+  ["sign.wooden.small", "Small Wooden Sign", "Fun", 1.2, 0.1, 1.0, "free"],
+  ["sign.wooden.large", "Large Wooden Sign", "Fun", 2.4, 0.1, 1.4, "free"],
+  ["sign.post.single", "Single Sign Post", "Fun", 0.8, 0.2, 2.0, "free"],
+  ["piano", "Wheelbarrow Piano", "Fun", 1.6, 0.8, 1.2, "free"],
+  ["arcade.machine.chippy", "Chippy Arcade Game", "Fun", 0.8, 0.8, 1.9, "free"]
+].map(([id, name, cat, w, d, h, place]) => ({ id, name, cat, w, d, h, place }));
+const CATALOG_BY_ID = {};
+CATALOG.forEach(c => { CATALOG_BY_ID[c.id] = c; if (!PREFAB_NAMES[c.id]) PREFAB_NAMES[c.id] = c.name; });
+
 // ---------- world.js ----------
 // Everything 3D that is shared between the replay viewer and archive thumbnails:
 // materials, building piece models, terrain, rock formations.
@@ -732,7 +910,12 @@ const solidMat = hex => new THREE.MeshStandardMaterial({ color: lin(hex), roughn
 const DMATS = {
   door: Object.assign(solidMat("#565e63"), { metalness: 0.5, roughness: 0.55 }),
   tc: solidMat("#6f7b4d"), tcLid: solidMat("#3f4630"),
-  box: solidMat("#7d5631"), furnace: solidMat("#5b5650"), bag: solidMat("#435039"), generic: solidMat("#9a9a9a")
+  box: solidMat("#7d5631"), furnace: solidMat("#5b5650"), bag: solidMat("#435039"), generic: solidMat("#9a9a9a"),
+  catConstruction: Object.assign(solidMat("#5d656b"), { metalness: 0.4, roughness: 0.6 }),
+  catItems: solidMat("#7d5a36"),
+  catElectrical: solidMat("#8a7a3c"),
+  catTraps: solidMat("#7a3f35"),
+  catFun: solidMat("#5e4f72")
 };
 const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x141713, transparent: true, opacity: 0.55 });
 const ROCK_MAT = new THREE.MeshStandardMaterial({ color: lin("#7a766c"), roughness: 1, flatShading: true, side: THREE.DoubleSide });
@@ -823,12 +1006,16 @@ function partsFor(prefab) {
     case "block.stair.spiral": return spiralSteps(0.85, 1.3, 3, 12, 0.3);
     case "block.stair.spiral.triangle": return spiralSteps(0.5, 0.75, 3, 10, 0.2);
     case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
-    case "door.hinged.metal": return [B(1.14, 2.15, 0.08, 0, 1.08, 0, "door")];
-    case "cupboard.tool.deployed": return [B(0.9, 1.0, 0.55, 0, 0.5, 0, "tc"), B(0.96, 0.08, 0.6, 0, 1.04, 0, "tcLid")];
-    case "box.wooden.large": return [B(1.3, 0.7, 0.75, 0, 0.35, 0, "box")];
-    case "furnace": return [B(0.85, 1.3, 0.85, 0, 0.65, 0, "furnace")];
-    case "sleepingbag_leather_deployed": return [B(0.8, 0.12, 1.9, 0, 0.06, 0, "bag")];
-    default: return [B(0.8, 0.8, 0.8, 0, 0.4, 0, "generic")];
+    default: {
+      // Deployables: a generic block with the item's footprint and height, positioned by how it mounts.
+      const c = CATALOG_BY_ID[prefab];
+      if (!c) return [B(0.8, 0.8, 0.8, 0, 0.4, 0, "generic")];
+      const m = "cat" + c.cat;
+      if (c.place === "doorway" || c.place === "frame") return [B(c.w, c.h, c.d, 0, c.h / 2 + 0.01, 0, m)];
+      if (c.place === "window") return [B(c.w, c.h, c.d, 0, 1.65, 0, m)];
+      if (c.place === "hatch" || c.place === "hatch.tri") return [B(c.w, c.h, c.d, 0, -c.h / 2, 0, m)];
+      return [B(c.w, c.h, c.d, 0, c.h / 2, 0, m)];
+    }
   }
 }
 
@@ -1776,7 +1963,8 @@ const Builder = (function () {
     "wall", "wall.doorway", "wall.window", "wall.frame", "wall.half", "wall.low",
     "block.stair.ushape", "block.stair.lshape", "block.stair.spiral", "block.stair.spiral.triangle", "ramp", "roof", "roof.triangle"
   ];
-  const DEPLOYABLES = ["door.hinged.metal", "cupboard.tool.deployed", "box.wooden.large", "furnace", "sleepingbag_leather_deployed"];
+  const SOCKET_WALL = { doorway: "wall.doorway", frame: "wall.frame", window: "wall.window" };
+  const placeOf = prefab => (CATALOG_BY_ID[prefab] ? CATALOG_BY_ID[prefab].place : "free");
   const DESC = {
     "foundation": "Every base starts here. Snaps edge to edge.",
     "foundation.triangle": "Fills angles and builds honeycomb.",
@@ -1804,6 +1992,11 @@ const Builder = (function () {
     "furnace": "Smelts ore.",
     "sleepingbag_leather_deployed": "A place to respawn."
   };
+  function describe(id) {
+    if (DESC[id]) return DESC[id];
+    const c = CATALOG_BY_ID[id];
+    return c ? c.w + " × " + c.d + " × " + c.h + " m (estimate until measured)" : "";
+  }
   const HAMMER = [
     { id: "wood", name: "Upgrade to Wood", desc: "Hit a piece to upgrade it to wood." },
     { id: "stone", name: "Upgrade to Stone", desc: "Hit a piece to upgrade it to stone." },
@@ -1813,13 +2006,6 @@ const Builder = (function () {
     { id: "demolish", name: "Demolish", desc: "Remove the piece you hit and anything it was holding up." }
   ];
   const SLOTS = ["plan", "hammer", "deploy"];
-  // Deployable footprints in metres (width along local x, depth along local z). Approximate; to be checked in-game.
-  const FOOTPRINT = {
-    "cupboard.tool.deployed": [0.96, 0.6],
-    "box.wooden.large": [1.3, 0.75],
-    "furnace": [0.85, 0.85],
-    "sleepingbag_leather_deployed": [0.8, 1.9]
-  };
   const STORE_KEY = "buildreplay.sandbox.v3";
   const MAX_LEVEL = 5;
   const FOUNDATION_DEPTH = 4; // the foundation model reaches 4 m below its top
@@ -1830,8 +2016,9 @@ const Builder = (function () {
     FL: "Floors need a full wall underneath on at least one edge",
     RF: "Roofs need a full wall underneath on at least one edge",
     S: "Stairs need a foundation or solid floor of the same shape",
-    D: "Doors go in a doorway",
-    X: "Place it on a foundation or solid floor, clear of stairs"
+    D: "This goes in a matching wall opening",
+    H: "This goes in a floor frame of the same shape",
+    X: "Place it on a foundation, a solid floor or the ground"
   };
   const NO_SNAP = {
     F: "Point at the ground",
@@ -1840,8 +2027,9 @@ const Builder = (function () {
     FL: "Point above a room with walls, or next to another floor",
     RF: "Point above a room with walls",
     S: "Point at a foundation or solid floor of the same shape",
-    D: "Point at a doorway",
-    X: "Point at a foundation or solid floor on this level"
+    D: "Point at a matching wall opening on this floor",
+    H: "Point at a floor frame of the same shape",
+    X: "Point at a foundation, a solid floor or the ground"
   };
 
   const kindOf = prefab =>
@@ -1851,7 +2039,8 @@ const Builder = (function () {
     SHAPE[prefab] && prefab.indexOf("floor") === 0 ? "FL" :
     SHAPE[prefab] ? "S" :
     WALLS.has(prefab) ? "W" :
-    prefab === "door.hinged.metal" ? "D" : "X";
+    SOCKET_WALL[placeOf(prefab)] ? "D" :
+    placeOf(prefab).indexOf("hatch") === 0 ? "H" : "X";
 
   // ---------- Geometry ----------
   const rad = d => d * Math.PI / 180;
@@ -1987,7 +2176,7 @@ const Builder = (function () {
   let renderer, scene, camera, controls, root, ghost = null, ghostPrefab = null;
 
   const S = { pieces: new Map(), sock: new Map(), events: [], nextId: 1, alias: new Map(), undo: [], redo: [], baseT: 0, resumeAt: null, name: "" };
-  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
+  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", recent: ["cupboard.tool.deployed", "box.wooden.large", "door.hinged.metal", "furnace", "sleepingbag_leather_deployed", "autoturret", "workbench1", "generator.wind.scrap"], cat: "Items", search: "", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
   let hover = null, lastPointer = null, highlighted = null, flashTimer = null;
 
   const all = () => Array.from(S.pieces.values());
@@ -2001,6 +2190,7 @@ const Builder = (function () {
       case "S": return "S" + fpKey(p.cx, p.cz, Hof(p));
       case "W": return edgeKey(p, Hof(p));
       case "D": return "D" + edgeKey(p, Hof(p));
+      case "H": return "H" + fpKey(p.cx, p.cz, Hof(p));
       case "FS": return "FS" + edgeKey(p, Hof(p));
       default: return null;
     }
@@ -2008,7 +2198,7 @@ const Builder = (function () {
   function posOf(p) {
     switch (p.kind) {
       case "F": return [p.cx, p.by, p.cz];
-      case "FL": case "RF": case "S": return [p.cx, Hof(p), p.cz];
+      case "FL": case "RF": case "S": case "H": return [p.cx, Hof(p), p.cz];
       case "W": case "D": return [p.mx, Hof(p), p.mz];
       case "FS": return [p.mx, p.by, p.mz];
       default: return [p.x, Hof(p), p.z];
@@ -2016,10 +2206,10 @@ const Builder = (function () {
   }
   function polyOf(p) {
     switch (p.kind) {
-      case "F": case "FL": case "RF": case "S": return shapeVerts(p.shape, p.cx, p.cz, p.theta);
+      case "F": case "FL": case "RF": case "S": case "H": return shapeVerts(p.shape, p.cx, p.cz, p.theta);
       case "W": case "D": return rectPoly(p.mx, p.mz, 3, 0.25, wallRot(p.a));
       case "FS": return rectPoly(p.mx + p.nx * 0.75, p.mz + p.nz * 0.75, 3, 1.5, wallRot(p.a));
-      default: { const fp = FOOTPRINT[p.prefab] || [0.8, 0.8]; return rectPoly(p.x, p.z, fp[0], fp[1], p.rot); }
+      default: { const c = CATALOG_BY_ID[p.prefab] || { w: 0.8, d: 0.8 }; return rectPoly(p.x, p.z, c.w, c.d, p.rot); }
     }
   }
   function overlapsAny(poly, filter, inset) {
@@ -2039,7 +2229,7 @@ const Builder = (function () {
   }
   function deployBlocked(p) {
     const H = Hof(p);
-    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && (o.kind === "X" || o.kind === "W") && sameH(Hof(o), H), 0.005);
+    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && (o.kind === "X" || o.kind === "W") && !o.ground && sameH(Hof(o), H), 0.005);
     if (!hit) return null;
     return hit.kind === "W" ? "Too close to a wall" : "Overlaps the " + prefabName(hit.prefab).toLowerCase();
   }
@@ -2052,8 +2242,9 @@ const Builder = (function () {
       case "W": return surfaceHasEdge(edgeKey(p, H)) || (p.L > 0 && fullWallAt(p, H - 3));
       case "FL": case "RF": return edgesOf(p).some(e => fullWallAt(e, H - 3));
       case "S": { const s = get(fpKey(p.cx, p.cz, H)); return isSolidSurface(s) && s.shape === p.shape; }
-      case "D": { const w = get(edgeKey(p, H)); return !!(w && w.prefab === "wall.doorway"); }
-      default: return deployOk(p);
+      case "D": { const w = get(edgeKey(p, H)); return !!(w && w.prefab === SOCKET_WALL[placeOf(p.prefab)]); }
+      case "H": { const f = get(fpKey(p.cx, p.cz, H)); return !!(f && f.prefab === (p.shape === "tri" ? "floor.triangle.frame" : "floor.frame")); }
+      default: return p.ground ? true : deployOk(p);
     }
   }
 
@@ -2079,6 +2270,13 @@ const Builder = (function () {
     if (c.kind === "S") {
       if (get(fpKey(c.cx, c.cz, H + 3))) return "Stairs need an opening above; remove that floor first";
       if (overlapsAny(poly, o => o.kind === "X" && sameH(Hof(o), H))) return "Clear the items off this floor first";
+    }
+    if (c.kind === "X" && c.ground) {
+      const g = groundUnder(poly);
+      if (g.max - g.min > 0.8) return "Too steep here";
+      const hit = overlapsAny(poly, o => o.kind === "F" || o.kind === "FS" || (o.kind === "X" && o.ground), 0.01);
+      if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
+      return null;
     }
     if (!supported(c)) return REASON[c.kind];
     if (c.kind === "X") { const b = deployBlocked(c); if (b) return b; }
@@ -2192,15 +2390,32 @@ const Builder = (function () {
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(wallRot(best.a) + (ui.rot % 2 ? 180 : 0)) };
     } else if (kind === "D") {
-      const L = ui.level;
-      const opts = all().filter(o => o.kind === "W" && o.L === L && o.prefab === "wall.doorway")
-        .map(o => ({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz, by: o.by, rot: o.rot, ref: [o.mx, Hof(o) + 1, o.mz] }));
+      const L = ui.level, wallType = SOCKET_WALL[placeOf(prefab)];
+      const opts = all().filter(o => o.kind === "W" && o.L === L && o.prefab === wallType)
+        .map(o => ({ mx: o.mx, mz: o.mz, a: o.a, nx: o.nx, nz: o.nz, by: o.by, rot: o.rot, ref: [o.mx, Hof(o) + 1.2, o.mz] }));
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { L, by: best.by, mx: best.mx, mz: best.mz, a: best.a, nx: best.nx, nz: best.nz, rot: norm(best.rot + (ui.rot % 2 ? 180 : 0)) };
+    } else if (kind === "H") {
+      const frameType = placeOf(prefab) === "hatch.tri" ? "floor.triangle.frame" : "floor.frame";
+      const opts = all().filter(o => o.prefab === frameType && o.mesh.visible)
+        .map(o => ({ shape: o.shape, L: o.L, by: o.by, cx: o.cx, cz: o.cz, theta: o.theta, rot: o.rot, ref: [o.cx, Hof(o), o.cz] }));
+      const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
+      if (best) c = { shape: best.shape, L: best.L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: best.rot };
     } else {
+      const rot = norm(ui.rot * 90);
       const hit = pieceUnder(sx, sy, p => isSolidSurface(p) && p.L === ui.level);
       if (hit) {
-        c = { L: ui.level, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot: norm(ui.rot * 90) };
+        c = { L: ui.level, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot };
+      } else if (ui.level === 0 && terrainMesh) {
+        // Most deployables can also go straight on the ground, like in Rust.
+        setRay(sx, sy);
+        const t = ray.intersectObject(terrainMesh)[0];
+        if (t) {
+          const x = Math.round(t.point.x * 4) / 4, z = Math.round(t.point.z * 4) / 4;
+          const cat = CATALOG_BY_ID[prefab] || { w: 0.8, d: 0.8 };
+          const g = groundUnder(rectPoly(x, z, cat.w, cat.d, rot));
+          c = { L: 0, by: R2(g.max - 1), x, z, rot, ground: true };
+        }
       }
     }
     if (!c) return null;
@@ -2338,7 +2553,7 @@ const Builder = (function () {
   }
   function actRotate(id) {
     const p = S.pieces.get(id);
-    if (p.kind === "F" || p.kind === "FL" || p.kind === "FS") return flash(prefabName(p.prefab) + " doesn't rotate");
+    if (p.kind === "F" || p.kind === "FL" || p.kind === "FS" || p.kind === "H") return flash(prefabName(p.prefab) + " doesn't rotate");
     const step = p.kind === "W" || p.kind === "D" ? 180 : p.kind === "X" ? 90 : TURN[p.shape];
     const old = p.rot, nr = norm(old - step);
     if (p.kind === "X") {
@@ -2515,9 +2730,9 @@ const Builder = (function () {
     return '<svg class="ic glyph" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="9" width="30" height="30" rx="3" style="fill:' + GRADES[g].hex + '"/><path d="M9 19h30M9 29h30M19 9v10M29 19v10M19 29v10"/></svg>';
   }
   function wheelItems() {
-    if (ui.slot === "plan") return PLAN.map(id => ({ id, name: prefabName(id), desc: DESC[id], icon: isoIcon(id) }));
+    if (ui.slot === "plan") return PLAN.map(id => ({ id, name: prefabName(id), desc: describe(id), icon: isoIcon(id) }));
     if (ui.slot === "hammer") return HAMMER.map(h => Object.assign({}, h, { icon: GRADES[h.id] ? gradeIcon(h.id) : GLYPHS[h.id] }));
-    return DEPLOYABLES.map(id => ({ id, name: prefabName(id), desc: DESC[id], icon: isoIcon(id) }));
+    return ui.recent.map(id => ({ id, name: prefabName(id), desc: describe(id), icon: isoIcon(id) }));
   }
   const selectedId = () => (ui.slot === "plan" ? ui.plan : ui.slot === "hammer" ? ui.hammer : ui.deploy);
   function arcPath(r0, r1, a0, a1) {
@@ -2606,7 +2821,7 @@ const Builder = (function () {
   function chooseFromWheel(id) {
     if (ui.slot === "plan") ui.plan = id;
     else if (ui.slot === "hammer") ui.hammer = id;
-    else if (ui.slot === "deploy") ui.deploy = id;
+    else if (ui.slot === "deploy") pickDeployable(id);
     selectSlot(ui.slot);
   }
 
@@ -2644,7 +2859,7 @@ const Builder = (function () {
     $("slotDeploySub").textContent = prefabName(ui.deploy);
     $("slotDeployIcon").innerHTML = isoIcon(ui.deploy);
     document.querySelectorAll(".slot").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.slot === ui.slot)));
-    document.querySelectorAll("#deployDock .dock-item").forEach(b => b.setAttribute("aria-pressed", String(ui.slot === "deploy" && b.dataset.prefab === ui.deploy)));
+    document.querySelectorAll("#deployList .dock-item").forEach(b => b.setAttribute("aria-pressed", String(ui.slot === "deploy" && b.dataset.prefab === ui.deploy)));
   }
   function updateStats() {
     let pieces = 0, deploy = 0;
@@ -2665,6 +2880,10 @@ const Builder = (function () {
     save();
   }
 
+  function pickDeployable(id) {
+    ui.deploy = id;
+    ui.recent = [id].concat(ui.recent.filter(x => x !== id)).slice(0, 8);
+  }
   function selectSlot(slot) {
     const prevPrefab = ui.prefab;
     ui.slot = slot;
@@ -2711,18 +2930,51 @@ const Builder = (function () {
     });
   }
 
-  function buildPanels() {
-    DEPLOYABLES.forEach(prefab => {
+  // Deployables window: category tabs, search, scrolling list of every item.
+  function renderDeployList() {
+    const list = $("deployList");
+    list.innerHTML = "";
+    const term = ui.search.trim().toLowerCase();
+    const items = CATALOG.filter(c => term ? (c.name.toLowerCase().indexOf(term) >= 0 || c.id.indexOf(term) >= 0) : c.cat === ui.cat);
+    items.forEach(c => {
       const b = el("button", "dock-item");
       b.type = "button";
-      b.dataset.prefab = prefab;
-      b.title = prefabName(prefab);
-      b.setAttribute("aria-pressed", "false");
-      const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(prefab);
-      b.append(ic, el("span", "dock-name", prefabName(prefab)));
-      b.addEventListener("click", () => { ui.deploy = prefab; selectSlot("deploy"); });
-      $("deployDock").appendChild(b);
+      b.dataset.prefab = c.id;
+      b.title = c.name + " · " + c.w + " × " + c.d + " × " + c.h + " m (estimate)";
+      b.setAttribute("aria-pressed", String(ui.slot === "deploy" && c.id === ui.deploy));
+      const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(c.id);
+      const txt = el("span", "dock-text");
+      txt.append(el("span", "dock-name", c.name), el("span", "dock-meta", (term ? c.cat + " · " : "") + MOUNT[c.place]));
+      b.append(ic, txt);
+      b.addEventListener("click", () => { pickDeployable(c.id); selectSlot("deploy"); });
+      list.appendChild(b);
     });
+    if (!items.length) list.appendChild(el("p", "dock-empty", "Nothing matches “" + ui.search.trim() + "”."));
+    document.querySelectorAll("#deployTabs button").forEach(b => b.setAttribute("aria-pressed", String(!term && b.dataset.cat === ui.cat)));
+    $("deployCount").textContent = items.length + (items.length === 1 ? " item" : " items");
+  }
+  const MOUNT = { free: "Floor or ground", doorway: "Doorway", frame: "Wall frame", window: "Window", hatch: "Floor frame", "hatch.tri": "Triangle floor frame" };
+  function buildDeployWindow() {
+    const tabs = $("deployTabs");
+    DEPLOY_CATS.forEach(cat => {
+      const b = el("button", null, cat);
+      b.type = "button";
+      b.dataset.cat = cat;
+      b.addEventListener("click", () => { ui.cat = cat; ui.search = ""; $("deploySearch").value = ""; renderDeployList(); $("deployList").scrollTop = 0; });
+      tabs.appendChild(b);
+    });
+    $("deploySearch").addEventListener("input", e => { ui.search = e.target.value; renderDeployList(); });
+    $("deployToggle").addEventListener("click", () => {
+      const win = $("deployWin");
+      const open = win.classList.toggle("collapsed") === false;
+      $("deployToggle").setAttribute("aria-expanded", String(open));
+      $("deployToggle").textContent = open ? "Hide" : "Show";
+    });
+    renderDeployList();
+  }
+
+  function buildPanels() {
+    buildDeployWindow();
     $("slotPlanIcon").innerHTML = GLYPHS.plan;
     $("slotHammerIcon").innerHTML = GLYPHS.hammer;
     GRADE_ORDER.forEach(g => {
@@ -2892,7 +3144,7 @@ const Builder = (function () {
   // Test hook: lets automated checks drive the builder at a world position instead of a mouse position.
   const testApi = {
     pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by })),
-    setPrefab(prefab) { if (DEPLOYABLES.indexOf(prefab) >= 0) { ui.deploy = prefab; selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
+    setPrefab(prefab) { if (CATALOG_BY_ID[prefab]) { pickDeployable(prefab); selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
     setHammer(id) { ui.hammer = id; selectSlot("hammer"); },
     setLevel, selectSlot,
     state: () => ({ slot: ui.slot, tool: ui.tool, prefab: ui.prefab, grade: ui.grade, hammer: ui.hammer }),

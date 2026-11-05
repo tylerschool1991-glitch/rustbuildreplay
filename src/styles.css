@@ -211,6 +211,7 @@ details.fmt p { margin: 8px 0 0; }
 .workspace.sandbox { grid-template-columns: minmax(0, 1fr); }
 .tool-card { position: absolute; top: 12px; left: 12px; max-width: min(360px, calc(100% - 24px)); pointer-events: none; }
 .base-card {
+  z-index: 2;
   position: absolute; top: 12px; right: 12px; width: 300px; max-width: calc(100% - 24px);
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); border-radius: 8px;
@@ -222,20 +223,49 @@ details.fmt p { margin: 8px 0 0; }
 .upall { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
 .upall .btn { padding: 5px 9px; font-size: 12px; }
 
-/* Deployables down the right edge of the screen */
-.dock {
-  position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px;
+/* Deployables window down the right side of the screen */
+.deploy-win {
+  position: absolute; right: 12px; top: 214px; bottom: 12px; width: 300px; max-width: calc(100% - 24px);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: rgba(24, 27, 25, 0.88); border: 1px solid var(--line); border-radius: 8px;
 }
+.deploy-win.collapsed { bottom: auto; }
+.deploy-win.collapsed .deploy-body { display: none; }
+.deploy-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.deploy-head h2 {
+  margin: 0; font-family: var(--font-display); font-size: 12.5px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.deploy-head h2 small { font-family: var(--font-mono); letter-spacing: 0.02em; text-transform: none; font-weight: 400; margin-left: 6px; }
+.deploy-head .btn { padding: 4px 9px; font-size: 12px; }
+.deploy-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1; }
+.deploy-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.deploy-tabs button {
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; color: var(--muted);
+}
+.deploy-tabs button[aria-pressed="true"] { background: var(--wheel-red); border-color: var(--wheel-red); color: #fff; }
+.deploy-win .field { padding: 6px 9px; font-size: 13px; }
+.deploy-list {
+  flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+  padding-right: 4px; scrollbar-width: thin; scrollbar-color: var(--line-hi) transparent;
+}
+.deploy-list::-webkit-scrollbar { width: 8px; }
+.deploy-list::-webkit-scrollbar-thumb { background: var(--line-hi); border-radius: 4px; }
 .dock-item {
-  display: flex; align-items: center; gap: 8px; width: 168px; padding: 4px 10px 4px 4px;
-  background: rgba(24, 27, 25, 0.86); border: 1px solid var(--line); border-radius: 8px; text-align: left;
-  color: var(--fg); --icon-bg: rgba(24, 27, 25, 1);
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px 4px 4px; flex: none;
+  background: var(--panel-2); border: 1px solid transparent; border-radius: 6px; text-align: left;
+  color: var(--fg); --icon-bg: var(--panel-2);
 }
 .dock-item:hover { border-color: var(--line-hi); }
 .dock-item[aria-pressed="true"] { border-color: var(--wheel-red); box-shadow: inset 0 0 0 1px var(--wheel-red); }
-.dock-icon { width: 38px; height: 38px; flex: none; color: var(--wheel-cream); }
+.dock-icon { width: 36px; height: 36px; flex: none; color: var(--wheel-cream); }
 .dock-icon svg { width: 100%; height: 100%; display: block; }
+.dock-text { display: flex; flex-direction: column; min-width: 0; }
 .dock-name { font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-meta { font-size: 11px; color: var(--muted); }
+.dock-empty { margin: 8px 4px; font-size: 12.5px; color: var(--muted); }
+.deploy-note { margin: 0; font-size: 11px; color: var(--muted); }
 
 /* Hotbar, like Rust's belt */
 .hotbar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 6px; }
@@ -303,8 +333,8 @@ details.fmt p { margin: 8px 0 0; }
 @media (max-width: 760px) {
   .slot { width: 64px; height: 64px; }
   .slot-icon { width: 36px; height: 36px; }
-  .slot-sub, .dock-name { display: none; }
-  .dock-item { width: auto; padding: 4px; }
+  .slot-sub { display: none; }
+  .deploy-win { top: auto; width: 230px; max-height: 46%; }
   .base-card { top: 8px; right: 8px; width: 46%; padding: 8px; }
   .base-card .gbar, .base-stats, .base-actions .btn:not(.primary), .upall { display: none; }
   .tool-card { top: 8px; left: 8px; max-width: 48%; }

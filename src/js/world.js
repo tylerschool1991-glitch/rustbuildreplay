@@ -13,7 +13,12 @@ const solidMat = hex => new THREE.MeshStandardMaterial({ color: lin(hex), roughn
 const DMATS = {
   door: Object.assign(solidMat("#565e63"), { metalness: 0.5, roughness: 0.55 }),
   tc: solidMat("#6f7b4d"), tcLid: solidMat("#3f4630"),
-  box: solidMat("#7d5631"), furnace: solidMat("#5b5650"), bag: solidMat("#435039"), generic: solidMat("#9a9a9a")
+  box: solidMat("#7d5631"), furnace: solidMat("#5b5650"), bag: solidMat("#435039"), generic: solidMat("#9a9a9a"),
+  catConstruction: Object.assign(solidMat("#5d656b"), { metalness: 0.4, roughness: 0.6 }),
+  catItems: solidMat("#7d5a36"),
+  catElectrical: solidMat("#8a7a3c"),
+  catTraps: solidMat("#7a3f35"),
+  catFun: solidMat("#5e4f72")
 };
 const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x141713, transparent: true, opacity: 0.55 });
 const ROCK_MAT = new THREE.MeshStandardMaterial({ color: lin("#7a766c"), roughness: 1, flatShading: true, side: THREE.DoubleSide });
@@ -104,12 +109,16 @@ function partsFor(prefab) {
     case "block.stair.spiral": return spiralSteps(0.85, 1.3, 3, 12, 0.3);
     case "block.stair.spiral.triangle": return spiralSteps(0.5, 0.75, 3, 10, 0.2);
     case "ramp": return [SLAB(SQUARE, [0, 0, 1, 1], 0.2)];
-    case "door.hinged.metal": return [B(1.14, 2.15, 0.08, 0, 1.08, 0, "door")];
-    case "cupboard.tool.deployed": return [B(0.9, 1.0, 0.55, 0, 0.5, 0, "tc"), B(0.96, 0.08, 0.6, 0, 1.04, 0, "tcLid")];
-    case "box.wooden.large": return [B(1.3, 0.7, 0.75, 0, 0.35, 0, "box")];
-    case "furnace": return [B(0.85, 1.3, 0.85, 0, 0.65, 0, "furnace")];
-    case "sleepingbag_leather_deployed": return [B(0.8, 0.12, 1.9, 0, 0.06, 0, "bag")];
-    default: return [B(0.8, 0.8, 0.8, 0, 0.4, 0, "generic")];
+    default: {
+      // Deployables: a generic block with the item's footprint and height, positioned by how it mounts.
+      const c = CATALOG_BY_ID[prefab];
+      if (!c) return [B(0.8, 0.8, 0.8, 0, 0.4, 0, "generic")];
+      const m = "cat" + c.cat;
+      if (c.place === "doorway" || c.place === "frame") return [B(c.w, c.h, c.d, 0, c.h / 2 + 0.01, 0, m)];
+      if (c.place === "window") return [B(c.w, c.h, c.d, 0, 1.65, 0, m)];
+      if (c.place === "hatch" || c.place === "hatch.tri") return [B(c.w, c.h, c.d, 0, -c.h / 2, 0, m)];
+      return [B(c.w, c.h, c.d, 0, c.h / 2, 0, m)];
+    }
   }
 }
 

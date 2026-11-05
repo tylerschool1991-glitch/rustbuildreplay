@@ -61,3 +61,17 @@ On a local or test server:
 ## Coordinates
 
 The plugin converts Rust (Unity, left-handed) coordinates to the viewer (three.js, right-handed): positions are relative to the first foundation, z is flipped, yaw is negated. Times are seconds since `/rec start`.
+
+---
+
+# BuildReplayMeasure (one-time sizing tool)
+
+`BuildReplayMeasure.cs` reads the exact sizes of every deployable and building piece straight from the game's prefabs, so the sandbox can match Rust to the centimetre. It doesn't spawn anything and you don't need to join the server.
+
+1. Set up a local server (Oxide or Carbon) on your PC. It can be brand new and empty.
+2. Copy `BuildReplayMeasure.cs` into `oxide/plugins/` (Carbon: `carbon/plugins/`).
+3. In the server console window, type: `brmeasure`
+4. It replies with how many items it measured and writes `oxide/data/BuildReplay/measurements.json` (Carbon: `carbon/data/BuildReplay/measurements.json`).
+5. Send that file back; the sandbox's sizes are then replaced with the measured ones. You can delete the plugin and the server afterwards.
+
+What it records for each item: its shortname, display name, craft category, prefab, overall bounds, and every collision box (centre and size in metres, relative to the item's origin). For building pieces it also records the collision boxes for each grade.

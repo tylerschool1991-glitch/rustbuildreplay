@@ -100,7 +100,18 @@
           </div>
         </div>
 
-        <div class="dock" id="deployDock" role="group" aria-label="Deployables"></div>
+        <section class="deploy-win" id="deployWin" aria-label="Deployables">
+          <div class="deploy-head">
+            <h2>Deployables <small id="deployCount"></small></h2>
+            <button class="btn" id="deployToggle" type="button" aria-expanded="true" aria-controls="deployBody">Hide</button>
+          </div>
+          <div class="deploy-body" id="deployBody">
+            <div class="deploy-tabs" id="deployTabs" role="group" aria-label="Categories"></div>
+            <input class="field" id="deploySearch" type="search" placeholder="Search all items" autocomplete="off" aria-label="Search deployables">
+            <div class="deploy-list" id="deployList"></div>
+            <p class="deploy-note">Sizes are estimates until measured from the game.</p>
+          </div>
+        </section>
 
         <div class="hotbar" id="hotbar" role="group" aria-label="Tools">
           <button class="slot" type="button" data-slot="plan" aria-pressed="true" title="Building Plan (1)">
