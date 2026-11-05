@@ -43,7 +43,9 @@ Requires Node 18+.
 node build.mjs
 ```
 
-Then open `dist/index.html` in a browser, or deploy the `dist/` folder to Netlify, Cloudflare Pages or GitHub Pages.
+Then open `dist/index.html` in a browser.
+
+The live site is served by GitHub Pages from the `docs/` folder (Settings → Pages → Deploy from a branch → `main` / `/docs`): https://tylerschool1991-glitch.github.io/rustbuildreplay/. Run `node build.mjs` and commit `docs/` to update it.
 
 ## Build log format
 

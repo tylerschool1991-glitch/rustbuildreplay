@@ -1,6 +1,7 @@
 // Bundles src/ into single-file pages.
 //   dist/index.html    – full HTML document, deployable to any static host (Netlify, Cloudflare Pages, GitHub Pages)
 //   dist/artifact.html – same page without the <html>/<head> wrapper, for Claude artifact previews
+//   docs/index.html    – copy of dist/index.html that GitHub Pages serves
 // Usage: node build.mjs
 import fs from "fs";
 import path from "path";
@@ -43,4 +44,8 @@ ${body}
 </html>
 `
 );
-console.log("Built dist/index.html and dist/artifact.html");
+// GitHub Pages serves the site from /docs on the main branch.
+fs.mkdirSync(path.join(here, "docs"), { recursive: true });
+fs.copyFileSync(path.join(here, "dist/index.html"), path.join(here, "docs/index.html"));
+fs.writeFileSync(path.join(here, "docs/.nojekyll"), "");
+console.log("Built dist/index.html, dist/artifact.html and docs/index.html");
