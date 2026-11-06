@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Oxide.Core;
 using UnityEngine;
@@ -15,7 +16,7 @@ namespace Oxide.Plugins
     // settle, records every piece's stability and the supports it found, then deletes everything it built.
     // While it runs (about 30 seconds) collapse is switched off so nothing falls; the setting is put back after.
     // Results: data/BuildReplay/stability.json. Run it on a local test server, not a live one.
-    [Info("BuildReplayMeasure", "BuildReplay", "0.5.0")]
+    [Info("BuildReplayMeasure", "BuildReplay", "0.5.1")]
     [Description("Dumps exact sizes of deployables and building pieces for the BuildReplay sandbox.")]
     public class BuildReplayMeasure : RustPlugin
     {
@@ -392,6 +393,8 @@ namespace Oxide.Plugins
             public string measuredAt;
             public string rustVersion;
             public Dictionary<string, object> settingsBefore;
+            public int worldSize;
+            public Dictionary<string, int> spotRejections;
             public List<string> methodsFound = new List<string>();
             public List<Scenario> scenarios = new List<Scenario>();
             public List<string> errors = new List<string>();
@@ -533,35 +536,47 @@ namespace Oxide.Plugins
             return pathOf.TryGetValue(prefab, out p) ? p : null;
         }
 
-        // A dry spot where every foundation of the scenario sits on fairly even ground, away from anything built.
-        private Vector3? FindSpot(Scenario s, List<Vector3> used)
+        // Ground where every foundation of the scenario can stand (the ground under it varies by no more than
+        // tol), above sea level and well away from any building. Stability ignores trees and rocks, so those
+        // don't matter. Rejection counts go into the results so a failed search can be explained.
+        private readonly Dictionary<string, int> rejected = new Dictionary<string, int>();
+        private void Reject(string why) { int n; rejected.TryGetValue(why, out n); rejected[why] = n + 1; }
+        private Vector3? FindSpot(Scenario s, List<Vector3> used, Vector3? near)
         {
-            var half = World.Size / 2f - 400f;
-            var mask = LayerMask.GetMask("Construction", "Deployed", "World", "Tree", "Default");
-            for (var attempt = 0; attempt < 6000; attempt++)
-            {
-                var c = new Vector3(UnityEngine.Random.Range(-half, half), 0, UnityEngine.Random.Range(-half, half));
-                var ok = true;
-                foreach (var u in used) if ((u - c).sqrMagnitude < 70f * 70f) { ok = false; break; }
-                if (!ok) continue;
-                float lo = float.MaxValue, hi = float.MinValue;
-                foreach (var p in s.pieces)
+            var size = (float)World.Size;
+            var half = Mathf.Max(100f, size / 2f - 300f);
+            var mask = LayerMask.GetMask("Construction");
+            foreach (var tol in new[] { 1.2f, 2.0f, 2.6f })
+                for (var attempt = 0; attempt < 4000; attempt++)
                 {
-                    if (p.prefab != "foundation") continue;
-                    for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++)
+                    Vector3 c;
+                    if (near.HasValue)
                     {
-                        var q = c + new Vector3(p.offset[0] + 1.5f * i, 0, p.offset[2] + 1.5f * j);
-                        var h = TerrainMeta.HeightMap.GetHeight(q);
-                        if (TerrainMeta.WaterMap != null && TerrainMeta.WaterMap.GetHeight(q) > h - 0.5f) ok = false;
-                        lo = Mathf.Min(lo, h); hi = Mathf.Max(hi, h);
+                        var r = 40f + attempt * 0.25f;
+                        var ang = attempt * 2.39996f;
+                        c = near.Value + new Vector3(Mathf.Cos(ang) * r, 0, Mathf.Sin(ang) * r);
                     }
+                    else c = new Vector3(UnityEngine.Random.Range(-half, half), 0, UnityEngine.Random.Range(-half, half));
+                    var ok = true;
+                    foreach (var u in used) if ((u - c).sqrMagnitude < 60f * 60f) { ok = false; break; }
+                    if (!ok) { Reject("near another test"); continue; }
+                    float lo = float.MaxValue, hi = float.MinValue;
+                    foreach (var p in s.pieces)
+                    {
+                        if (p.prefab != "foundation") continue;
+                        for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++)
+                        {
+                            var h = TerrainMeta.HeightMap.GetHeight(c + new Vector3(p.offset[0] + 1.5f * i, 0, p.offset[2] + 1.5f * j));
+                            lo = Mathf.Min(lo, h); hi = Mathf.Max(hi, h);
+                        }
+                    }
+                    if (lo < 1f) { Reject("below sea level"); continue; }
+                    if (hi - lo > tol) { Reject("ground too uneven"); continue; }
+                    var top = hi + 0.3f;
+                    if (Physics.CheckSphere(c + new Vector3(0, top, 0), 25f, mask)) { Reject("buildings nearby"); continue; }
+                    c.y = top;
+                    return c;
                 }
-                if (!ok || lo < 2f || hi - lo > 1.2f) continue;
-                var top = hi + 0.3f;
-                if (Physics.CheckSphere(c + new Vector3(0, top, 0), 30f, mask)) continue;
-                c.y = top;
-                return c;
-            }
             return null;
         }
 
@@ -603,11 +618,17 @@ namespace Oxide.Plugins
             catch (Exception ex) { stab.errors.Add("building id: " + ex.Message); }
 
             var used = new List<Vector3>();
+            rejected.Clear();
+            // Run from the F1 console in game, the tests are built around you; from the server console, anywhere.
+            Vector3? near = null;
+            var caller = arg.Player();
+            if (caller != null) near = caller.transform.position;
+            stab.worldSize = (int)World.Size;
             var count = 0;
             foreach (var sc in BuildScenarios())
             {
                 stab.scenarios.Add(sc);
-                var spot = FindSpot(sc, used);
+                var spot = FindSpot(sc, used, near);
                 if (spot == null) { stab.errors.Add(sc.name + ": no flat spot found"); continue; }
                 used.Add(spot.Value);
                 sc.origin = V(spot.Value);
@@ -634,6 +655,16 @@ namespace Oxide.Plugins
                     }
                     catch (Exception ex) { stab.errors.Add(p.label + " spawn: " + ex.Message); }
                 }
+            }
+            stab.spotRejections = new Dictionary<string, int>(rejected);
+            if (count == 0)
+            {
+                try { if (collapseField != null) collapseField.SetValue(null, collapseBefore); } catch { }
+                Interface.Oxide.DataFileSystem.WriteObject("BuildReplay/stability", stab);
+                var why = string.Join(", ", rejected.Select(kv => kv.Key + " " + kv.Value).ToArray());
+                arg.ReplyWith("BuildReplay: couldn't find room for the tests (" + why + "). Saved details to data/BuildReplay/stability.json");
+                stab = null;
+                return;
             }
             arg.ReplyWith("BuildReplay: built " + count + " test pieces in " + stab.scenarios.Count + " structures; measuring for about 30 seconds...");
             timer.Once(3f, () => StabilityPass(0));

@@ -82,5 +82,5 @@ Rust works out a stability percentage for every building piece and collapses any
 
 1. Use your **local test server** (not a live server). Replace `BuildReplayMeasure.cs` in `oxide/plugins/` (Carbon: `carbon/plugins/`) with this version; it reloads by itself.
 2. In the server console, type: `brstability`
-3. It builds about 20 small test structures (walls stacked, floors overhanging, bridges, half walls, roofs, triangles) on flat empty spots around the map, with collapse switched off so weak pieces stay up. After about 30 seconds it records every piece's stability and the supports Rust found, deletes everything it built, and switches collapse back on.
+3. (You can also run it from the F1 console while standing in an open area in game; then it builds the tests around you.) It builds about 20 small test structures (walls stacked, floors overhanging, bridges, half walls, roofs, triangles) on flat empty spots around the map, with collapse switched off so weak pieces stay up. After about 30 seconds it records every piece's stability and the supports Rust found, deletes everything it built, and switches collapse back on.
 4. When the console says `stability measured`, send `oxide/data/BuildReplay/stability.json` (Carbon: `carbon/data/BuildReplay/stability.json`).
