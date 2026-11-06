@@ -16,7 +16,7 @@ namespace Oxide.Plugins
     // settle, records every piece's stability and the supports it found, then deletes everything it built.
     // While it runs (about 30 seconds) collapse is switched off so nothing falls; the setting is put back after.
     // Results: data/BuildReplay/stability.json. Run it on a local test server, not a live one.
-    [Info("BuildReplayMeasure", "BuildReplay", "0.5.1")]
+    [Info("BuildReplayMeasure", "BuildReplay", "0.5.2")]
     [Description("Dumps exact sizes of deployables and building pieces for the BuildReplay sandbox.")]
     public class BuildReplayMeasure : RustPlugin
     {
@@ -384,6 +384,7 @@ namespace Oxide.Plugins
             public string name;
             public string note;
             public float[] origin;
+            public bool inAir;
             public List<Piece> pieces = new List<Piece>();
         }
 
@@ -546,8 +547,8 @@ namespace Oxide.Plugins
             var size = (float)World.Size;
             var half = Mathf.Max(100f, size / 2f - 300f);
             var mask = LayerMask.GetMask("Construction");
-            foreach (var tol in new[] { 1.2f, 2.0f, 2.6f })
-                for (var attempt = 0; attempt < 4000; attempt++)
+            foreach (var tol in new[] { 1.2f, 2.6f })
+                for (var attempt = 0; attempt < 1500; attempt++)
                 {
                     Vector3 c;
                     if (near.HasValue)
@@ -577,6 +578,24 @@ namespace Oxide.Plugins
                     c.y = top;
                     return c;
                 }
+            return null;
+        }
+
+        private Vector3? SkySpot(List<Vector3> used)
+        {
+            var mask = LayerMask.GetMask("Construction", "Deployed");
+            var reach = Mathf.Max(60f, (float)World.Size / 2f - 100f);
+            for (var i = 0; i < 400; i++)
+            {
+                // Rows 50 m apart, filling outward from the middle of the map, 250 m up.
+                var col = i % 20 - 10; var row = i / 20 - 10;
+                var c = new Vector3(col * 50f, 250f, row * 50f);
+                if (Mathf.Abs(c.x) > reach || Mathf.Abs(c.z) > reach) continue;
+                var ok = true;
+                foreach (var u in used) if ((u - c).sqrMagnitude < 45f * 45f) { ok = false; break; }
+                if (!ok || Physics.CheckSphere(c, 25f, mask)) continue;
+                return c;
+            }
             return null;
         }
 
@@ -629,7 +648,14 @@ namespace Oxide.Plugins
             {
                 stab.scenarios.Add(sc);
                 var spot = FindSpot(sc, used, near);
-                if (spot == null) { stab.errors.Add(sc.name + ": no flat spot found"); continue; }
+                if (spot == null)
+                {
+                    // No room on the ground (small or crowded maps): build it in the air instead. Rust treats
+                    // foundations as grounded however they're placed, so stability comes out the same.
+                    spot = SkySpot(used);
+                    sc.inAir = true;
+                }
+                if (spot == null) { stab.errors.Add(sc.name + ": no room on the ground or in the air"); continue; }
                 used.Add(spot.Value);
                 sc.origin = V(spot.Value);
                 object buildingId = null;
