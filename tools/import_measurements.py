@@ -63,7 +63,8 @@ def main():
         parts = []
         for c in e.get("colliders") or []:
             name = (c.get("name") or "").lower()
-            if "prevent" in name or "trigger" in name:
+            # Only solid bodies: skip building/movement blockers, triggers, use areas and ranges.
+            if any(k in name for k in ("prevent", "trigger", "usable", "usearea", "range", "volume")):
                 continue
             b = convert(c, place)
             if max(b[3:]) < 0.02:

@@ -20,22 +20,22 @@
 
   function workbench(level) {
     const top = level === 3 ? "mSteel" : "mWood", frame = level === 1 ? "mWoodDark" : level === 2 ? "mRust" : "mSteelDark";
-    const W = 1.57, D = 0.84, ty = 0.78;
+    const W = 1.57, D = 0.84, ty = 0.78, H = level === 3 ? 2.02 : 2.2; // level 3 is measured 20 cm lower
     const p = [
       B(W, 0.07, D, 0, ty, 0, top),
       ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => B(0.08, ty - 0.035, 0.08, sx * (W / 2 - 0.05), (ty - 0.035) / 2, sz * (D / 2 - 0.05), frame)),
       B(W - 0.1, 0.04, D - 0.1, 0, 0.16, 0, frame),
       // Back board with tools hung on it.
-      B(0.06, 2.2, 0.08, -0.75, 1.1, 0.38, frame), B(0.06, 2.2, 0.08, 0.75, 1.1, 0.38, frame),
+      B(0.06, H, 0.08, -0.75, H / 2, 0.38, frame), B(0.06, H, 0.08, 0.75, H / 2, 0.38, frame),
       B(1.5, 1.05, 0.04, 0, 1.38, 0.4, level === 1 ? "mWoodPale" : level === 2 ? "mRustDark" : "mSteel"),
-      B(1.57, 0.07, 0.16, 0, 2.17, 0.36, frame),
+      B(1.57, 0.07, 0.16, 0, H - 0.035, 0.36, frame),
       B(0.06, 0.32, 0.03, -0.45, 1.5, 0.37, "mSteelDark"), B(0.18, 0.06, 0.04, -0.45, 1.66, 0.37, "mSteelDark"),
       B(0.05, 0.4, 0.03, -0.2, 1.45, 0.37, "mWoodDark"), B(0.2, 0.05, 0.03, 0.15, 1.62, 0.37, "mSteel"), B(0.04, 0.3, 0.03, 0.15, 1.45, 0.37, "mSteel"),
       B(0.22, 0.12, 0.2, 0.55, ty + 0.095, -0.25, "mSteelDark"), // vise
       B(0.4, 0.2, 0.3, -0.45, 0.28, -0.05, "mWoodDark")           // crate under the bench
     ];
     if (level >= 2) p.push(B(0.5, 0.25, 0.42, 0.45, ty + 0.16, 0.15, "mRust"), B(0.06, 0.06, 0.2, 0.45, ty + 0.3, -0.1, "mSteelDark"));
-    if (level === 3) p.push(B(0.34, 0.86, 0.84, -0.94, 0.45, 0, "mSteelDark"), B(0.24, 0.26, 0.86, -0.97, 1.89, 0.02, "mSteelDark"), B(0.04, 0.06, 0.2, -0.78, 0.6, -0.3, "mLampGreen"), B(0.46, 0.8, 0.82, 0.55, 0.4, 0.02, "mSteel"));
+    if (level === 3) p.push(B(0.34, 0.86, 0.84, -0.94, 0.45, 0, "mSteelDark"), B(0.24, 0.26, 0.86, -0.97, 1.86, 0.02, "mSteelDark"), B(0.04, 0.06, 0.2, -0.78, 0.6, -0.3, "mLampGreen"), B(0.46, 0.8, 0.82, 0.55, 0.4, 0.02, "mSteel"));
     return p;
   }
 
@@ -58,7 +58,7 @@
       ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => B(0.08, 0.74, 0.08, sx * 0.85, 0.37, sz * 0.48, "mWoodDark")),
       B(1.78, 0.08, 1.04, 0, 0.75, 0, "mWoodDark"),
       B(1.72, 0.05, 1.0, 0, 0.2, 0, "mWoodDark"), B(1.72, 0.05, 1.0, 0, 0.52, 0, "mWoodDark"),
-      B(0.14, 0.16, 0.03, 0, 0.62, -0.52, "mSteelDark")
+      B(0.14, 0.16, 0.025, 0, 0.62, -0.51, "mSteelDark")
     ],
     "workbench1": () => workbench(1),
     "workbench2": () => workbench(2),
@@ -106,7 +106,7 @@
       B(0.5, 0.04, 0.78, 0, 0.02, 0, "mWood"),
       B(0.1, 0.86, 0.1, 0, 0.47, 0, "mWoodDark"),
       B(0.16, 0.18, 0.46, 0, 0.86, 0.05, "mWoodDark"),
-      B(0.08, 0.08, 0.6, 0, 0.92, -0.36, "mSteelDark"),
+      B(0.08, 0.08, 0.55, 0, 0.92, -0.355, "mSteelDark"),
       B(0.22, 0.15, 0.2, 0.16, 0.78, 0.14, "mRust"),
       B(0.3, 0.03, 0.03, 0, 0.6, 0, "mRope")
     ],
@@ -149,7 +149,7 @@
       const p = [B(w0, h0, d0, x0, y0, z0, "mSteelDark")];
       c.cols.slice(2).forEach(([x, y, z, w, h, d], i) => p.push(B(w - 0.04, h - 0.03, d, x, y, z - 0.012, i % 2 ? "mSteel" : "mRust")));
       p.push(B(0.06, 2.85, 0.1, -1.32, 1.425, -0.07, "mSteelDark"), B(0.06, 2.85, 0.1, 1.32, 1.425, -0.07, "mSteelDark"));
-      p.push(B(2.7, 0.24, 0.26, 0, 2.73, -0.18, "mSteelDark"));
+      p.push(B(2.7, 0.2, 0.24, 0, 2.75, -0.2, "mSteelDark")); // roller box, inside the game's measured header
       p.push(B(0.3, 0.04, 0.05, 0, 0.3, -0.13, "mSteelDark"));
       return p;
     },

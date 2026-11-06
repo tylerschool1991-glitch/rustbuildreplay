@@ -304,18 +304,83 @@ const Builder = (function () {
     const P = shrink(poly, s);
     return all().find(o => filter(o) && polyOverlap(P, shrink(polyOf(o), s))) || null;
   }
+  // An item's solid footprint: its measured collision boxes turned with it. Rust checks these, not the
+  // outer bounds (a sleeping bag's bounds, for one, are 25 cm bigger than the bag).
+  function itemRects(prefab, x, z, rot) {
+    const c = CATALOG_BY_ID[prefab];
+    if (!c) return [rectPoly(x, z, 0.8, 0.8, rot)];
+    const cs = cosd(rot), sn = sind(rot);
+    const boxes = (c.cols && c.cols.length ? c.cols : [c.b]).filter(b => b[3] > 0.02 && b[5] > 0.02);
+    return boxes.map(([bx, , bz, w, , d]) => rectPoly(x + bx * cs + bz * sn, z - bx * sn + bz * cs, w, d, rot));
+  }
+  // What an item can't overlap: other items on the same floor (or the ground), the walls standing on that
+  // floor (20 cm thick), and for ground items, foundations and steps.
+  function obstaclesFor(p) {
+    const H = Hof(p), out = [];
+    all().forEach(o => {
+      if (o.id === p.id) return;
+      if (p.ground) {
+        if (o.kind === "X" && o.ground) itemRects(o.prefab, o.x, o.z, o.rot).forEach(r => out.push({ r, o }));
+        else if (o.kind === "F" || o.kind === "FS") out.push({ r: polyOf(o), o });
+      } else if (sameH(Hof(o), H)) {
+        if (o.kind === "X" && !o.ground) itemRects(o.prefab, o.x, o.z, o.rot).forEach(r => out.push({ r, o }));
+        else if (o.kind === "W") out.push({ r: rectPoly(o.mx, o.mz, 3, WALL_T, wallRot(o.a)), o });
+      }
+    });
+    return out;
+  }
+  // How far, and which way, to move polygon A so it no longer overlaps B (separating axis test).
+  function pushOut(A, B) {
+    let best = null;
+    for (const P of [A, B]) {
+      for (let i = 0; i < P.length; i++) {
+        const [x1, z1] = P[i], [x2, z2] = P[(i + 1) % P.length];
+        let nx = z2 - z1, nz = -(x2 - x1);
+        const l = Math.hypot(nx, nz);
+        if (!l) continue;
+        nx /= l; nz /= l;
+        let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+        A.forEach(([x, z]) => { const d = x * nx + z * nz; a0 = Math.min(a0, d); a1 = Math.max(a1, d); });
+        B.forEach(([x, z]) => { const d = x * nx + z * nz; b0 = Math.min(b0, d); b1 = Math.max(b1, d); });
+        const back = a1 - b0, fwd = b1 - a0;
+        if (back <= 0 || fwd <= 0) return null;
+        const d = Math.min(back, fwd);
+        if (!best || d < best.d) best = back < fwd ? { d, x: -nx, z: -nz } : { d, x: nx, z: nz };
+      }
+    }
+    return best;
+  }
+  // Aiming a little into a wall or another item slides the item out until it sits flush, so tight
+  // layouts are easy to place. A big overlap is left alone (and shows as blocked).
+  function settleItem(c) {
+    const x0 = c.x, z0 = c.z;
+    for (let it = 0; it < 8; it++) {
+      const mine = itemRects(c.prefab, c.x, c.z, c.rot), obs = obstaclesFor(c);
+      let worst = null;
+      mine.forEach(m => obs.forEach(ob => { const v = pushOut(m, ob.r); if (v && v.d > 0.004 && (!worst || v.d > worst.d)) worst = v; }));
+      if (!worst) return;
+      if (worst.d > 0.6) break;
+      c.x += worst.x * (worst.d + 0.003);
+      c.z += worst.z * (worst.d + 0.003);
+    }
+    // It doesn't fit here (squeezed between things, or aimed deep into something): leave it where it
+    // was aimed so the message names what's in the way.
+    c.x = x0; c.z = z0;
+  }
   function deployOk(p) {
     const H = Hof(p);
-    const P = shrink(polyOf(p), 0.02);
+    const P = [].concat(...itemRects(p.prefab, p.x, p.z, p.rot).map(r => shrink(r, 0.02)));
     const solids = all().filter(s => isSolidSurface(s) && sameH(Hof(s), H)).map(polyOf);
     const stairs = all().filter(s => s.kind === "S" && sameH(Hof(s), H)).map(polyOf);
     return P.every(([x, z]) => solids.some(sp => pointInPoly(x, z, sp)) && !stairs.some(sp => pointInPoly(x, z, sp)));
   }
   function deployBlocked(p) {
-    const H = Hof(p);
-    const hit = overlapsAny(polyOf(p), o => o.id !== p.id && (o.kind === "X" || o.kind === "W") && !o.ground && sameH(Hof(o), H), 0.005);
-    if (!hit) return null;
-    return hit.kind === "W" ? "Too close to a wall" : "Overlaps the " + prefabName(hit.prefab).toLowerCase();
+    const mine = itemRects(p.prefab, p.x, p.z, p.rot).map(r => shrink(r, 0.004));
+    for (const ob of obstaclesFor(p)) {
+      const R = shrink(ob.r, 0.004);
+      if (mine.some(m => polyOverlap(m, R))) return ob.o.kind === "W" ? "Runs into the " + prefabName(ob.o.prefab).toLowerCase() : "Overlaps the " + prefabName(ob.o.prefab).toLowerCase();
+    }
+    return null;
   }
 
   // ---------- Sockets and support (from the game's socket data, Rust 2635.289.1) ----------
@@ -566,12 +631,10 @@ const Builder = (function () {
     if (c.kind === "X" && c.ground) {
       const g = groundUnder(poly);
       if (g.max - g.min > 0.8) return "Too steep here";
-      const hit = overlapsAny(poly, o => o.kind === "F" || o.kind === "FS" || (o.kind === "X" && o.ground), 0.01);
-      if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
-      return null;
+      return deployBlocked(c);
     }
-    if (!supported(c)) return REASON[c.kind];
     if (c.kind === "X") { const b = deployBlocked(c); if (b) return b; }
+    if (!supported(c)) return REASON[c.kind];
     if (c.kind !== "F") {
       const st = candidateStability(c);
       c.stab = st;
@@ -736,13 +799,13 @@ const Builder = (function () {
       const rot = norm(ui.rot * 90);
       const hit = pieceUnder(sx, sy, p => isSolidSurface(p) && inBand(p.L));
       if (hit) {
-        c = { L: hit.piece.L, by: hit.piece.by, x: Math.round(hit.point.x * 4) / 4, z: Math.round(hit.point.z * 4) / 4, rot };
+        c = { L: hit.piece.L, by: hit.piece.by, x: Math.round(hit.point.x * 100) / 100, z: Math.round(hit.point.z * 100) / 100, rot };
       } else if (ui.level === 0 && terrainMesh) {
         // Most deployables can also go straight on the ground, like in Rust.
         setRay(sx, sy);
         const t = ray.intersectObject(terrainMesh)[0];
         if (t) {
-          const x = Math.round(t.point.x * 4) / 4, z = Math.round(t.point.z * 4) / 4;
+          const x = Math.round(t.point.x * 100) / 100, z = Math.round(t.point.z * 100) / 100;
           const g = groundUnder(footRect(prefab, x, z, rot));
           c = { L: 0, by: R2(g.max - 1), x, z, rot, ground: true };
         }
@@ -750,6 +813,10 @@ const Builder = (function () {
     }
     if (!c) return null;
     Object.assign(c, { prefab, kind, grade: STRUCTURAL.has(prefab) ? "twigs" : "wood" });
+    if (kind === "X") {
+      settleItem(c);
+      if (c.ground) { const g = groundUnder(footRect(prefab, c.x, c.z, c.rot)); c.by = R2(g.max - 1); }
+    }
     c.pos = posOf(c);
     return c;
   }
@@ -1675,6 +1742,32 @@ const Builder = (function () {
       return ids;
     },
     rotate(id) { actRotate(id); },
+    // Each of our models' extents against the item's measured bounds (metres; positive = sticks out).
+    modelCheck() {
+      return Object.keys(ITEM_MODELS).map(id => {
+        const c = CATALOG_BY_ID[id], lift = c.place === "window" ? WINDOW_BOTTOM : 0;
+        let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        ITEM_MODELS[id]().forEach(p => {
+          const r = (p.ry || 0) * Math.PI / 180, cs = Math.abs(Math.cos(r)), sn = Math.abs(Math.sin(r));
+          const hw = (p.w * cs + p.d * sn) / 2, hd = (p.w * sn + p.d * cs) / 2;
+          lo = [Math.min(lo[0], p.x - hw), Math.min(lo[1], p.y - p.h / 2), Math.min(lo[2], p.z - hd)];
+          hi = [Math.max(hi[0], p.x + hw), Math.max(hi[1], p.y + p.h / 2), Math.max(hi[2], p.z + hd)];
+        });
+        const b = c.b, bl = [b[0] - b[3] / 2, b[1] - b[4] / 2 + lift, b[2] - b[5] / 2], bh = [b[0] + b[3] / 2, b[1] + b[4] / 2 + lift, b[2] + b[5] / 2];
+        const out = [0, 1, 2].map(k => Math.max(bl[k] - lo[k], hi[k] - bh[k]));
+        return { id, over: out.map(v => Math.round(v * 1000) / 1000), model: [0, 1, 2].map(k => Math.round((hi[k] - lo[k]) * 1000) / 1000), measured: [b[3], b[4], b[5]] };
+      });
+    },
+    placeItem(prefab, x, z, y, rot) {
+      pickDeployable(prefab); selectSlot("deploy"); ui.rot = Math.round((rot || 0) / 90);
+      const [sx, sy] = testApi.toScreen(x, y, z);
+      const c = snap(sx, sy);
+      if (!c) return { r: "no-snap" };
+      const why = validate(c);
+      if (why) return { r: why, x: c.x, z: c.z };
+      actPlace(c);
+      return { r: "ok", x: c.x, z: c.z };
+    },
     setRot(r) { ui.rot = r; },
     setPrefab(prefab) { if (CATALOG_BY_ID[prefab]) { pickDeployable(prefab); selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
     setHammer(id) { ui.hammer = id; selectSlot("hammer"); },
