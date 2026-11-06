@@ -3114,6 +3114,124 @@ const Builder = (function () {
     return ok;
   }
 
+  // ---------- Stability (measured with BuildReplayMeasure brstability on Rust 2635.289.1) ----------
+  // How Rust works it out, matched against 21 test structures built on a real server:
+  //  - Foundations are 100%.
+  //  - Every other piece has supports, one per male socket, each with a factor: a wall's base 0.7 (low wall
+  //    0.9) plus 0.1 at each end where it meets another wall's end; a floor 0.25 per edge (triangle 0.33);
+  //    a roof's low edge 0.3; stairs, ramps and foundation steps 0.7.
+  //  - Each support takes ONE of the pieces at that socket: the one with the fewest steps to the ground.
+  //  - Stability = sum of factor x (that piece's own support value, worked out without counting this piece),
+  //    capped at 100%. A piece under 5% collapses (and can't be placed).
+  const COLLAPSE = 0.05;
+  const isStab = p => p.kind === "F" || p.kind === "FS" || p.kind === "W" || p.kind === "FL" || p.kind === "RF" || p.kind === "S";
+  // Wall-end stability sockets: a 0.1 m wide box at each end of a wall (2.5 m tall on full walls, 1 m on
+  // half walls, 0.5 m on low walls); two wall ends brace each other wherever their boxes overlap.
+  const STAB_H = { "wall": 1.5, "wall.doorway": 1.5, "wall.window": 1.5, "wall.frame": 1.5, "wall.half": 0.75, "wall.low": 0.5 };
+  const STAB_BOX = { "wall": 2.5, "wall.doorway": 2.5, "wall.window": 2.5, "wall.frame": 2.5, "wall.half": 1, "wall.low": 0.5 };
+  const ptKey = (x, z) => Math.round(x * 20) + ":" + Math.round(z * 20);
+  function wallEnds(p) {
+    const tx = -p.nz, tz = p.nx, y = Hof(p) + STAB_H[p.prefab], h = STAB_BOX[p.prefab];
+    return [{ k: ptKey(p.mx + tx * 1.5, p.mz + tz * 1.5), y, h }, { k: ptKey(p.mx - tx * 1.5, p.mz - tz * 1.5), y, h }];
+  }
+  function femaleIndexOf(list, skipId) {
+    const idx = new Map();
+    list.forEach(p => {
+      if (p.id === skipId) return;
+      femalesOf(p).forEach(f => {
+        const k = f.type + edgeKey(f.e, f.H);
+        if (!idx.has(k)) idx.set(k, []);
+        idx.get(k).push(f);
+      });
+    });
+    return idx;
+  }
+  function wallEndIndex(list) {
+    const ends = new Map();
+    list.forEach(p => { if (p.kind === "W") wallEnds(p).forEach(w => { if (!ends.has(w.k)) ends.set(w.k, []); ends.get(w.k).push({ id: p.id, y: w.y, h: w.h }); }); });
+    return ends;
+  }
+  // Supports of a piece: [{ f: factor, c: [ids of pieces at that socket] }].
+  function supportLinks(p, idx, ends) {
+    const H = Hof(p), notMe = f => f.id !== p.id;
+    switch (p.kind) {
+      case "W": {
+        const out = [{ f: p.prefab === "wall.low" ? 0.9 : 0.7, c: (idx.get("W" + edgeKey(p, H)) || []).filter(notMe).map(f => f.id) }];
+        wallEnds(p).forEach(w => out.push({ f: 0.1, c: (ends.get(w.k) || []).filter(o => o.id !== p.id && Math.abs(o.y - w.y) < (o.h + w.h) / 2 - 0.001).map(o => o.id) }));
+        return out;
+      }
+      case "RF": return [{ f: 0.3, c: (idx.get("W" + edgeKey(roofLow(p), H)) || []).filter(notMe).map(f => f.id) }];
+      case "FL":
+        return edgesOf(p).map(e => ({
+          f: p.shape === "tri" ? 0.33 : 0.25,
+          c: (idx.get("FL" + edgeKey(e, H)) || []).filter(f => notMe(f) && f.stab && f.e.nx * (p.cx - e.mx) + f.e.nz * (p.cz - e.mz) > 0).map(f => f.id)
+        }));
+      case "FS": return [{ f: 0.7, c: (idx.get("W" + edgeKey(p, H)) || []).filter(f => { const o = S.pieces.get(f.id); return o && o.kind === "F"; }).map(f => f.id) }];
+      case "S": return [{ f: 0.7, c: supportersOf(p, idx) }];
+    }
+    return [];
+  }
+  // Solves the whole structure: Map id -> { s: stability 0..1, d: steps to the ground }.
+  function solveStability(list) {
+    const idx = femaleIndexOf(list), ends = wallEndIndex(list), node = new Map();
+    list.forEach(p => {
+      if (!isStab(p)) return;
+      const g = p.kind === "F";
+      node.set(p.id, { p, g, sup: g ? [] : supportLinks(p, idx, ends), d: g ? 1 : Infinity, s: g ? 1 : 0 });
+    });
+    node.forEach(n => n.sup.forEach(l => { l.c = l.c.filter(id => node.has(id)); }));
+    for (let guard = 0, ch = true; ch && guard < 2000; guard++) {
+      ch = false;
+      node.forEach(n => {
+        if (n.g) return;
+        let d = Infinity;
+        n.sup.forEach(l => l.c.forEach(id => { const m = node.get(id); if (m.d + 1 < d) d = m.d + 1; }));
+        if (d !== n.d) { n.d = d; ch = true; }
+      });
+    }
+    const pick = (l, a, b) => { let best = null; for (const id of l.c) { if (id === a || id === b) continue; const m = node.get(id); if (!best || m.d < best.d) best = m; } return best; };
+    const csv = (q, ign) => {
+      if (q.g) return 1;
+      let v = 0;
+      q.sup.forEach(l => { const m = pick(l, q.p.id, ign); if (m) v += l.f * m.s; });
+      return Math.min(1, v);
+    };
+    const stabOf = n => {
+      let v = 0;
+      n.sup.forEach(l => { const m = pick(l, n.p.id, n.p.id); if (m) v += l.f * csv(m, n.p.id); });
+      return Math.min(1, v);
+    };
+    for (let it = 0; it < 400; it++) {
+      let delta = 0;
+      node.forEach(n => { if (n.g) return; const v = stabOf(n); delta = Math.max(delta, Math.abs(v - n.s)); n.s = v; });
+      if (delta < 1e-7) break;
+    }
+    node.pick = pick; node.csv = csv;
+    return node;
+  }
+  // A new piece's stability against the structure as it stands (what Rust checks when you place it).
+  function candidateStability(c) {
+    if (!isStab(c)) return null;
+    if (c.kind === "F") return 1;
+    const node = S.solved || (S.solved = solveStability(all()));
+    const list = all(), tmp = Object.assign({}, c, { id: -1 });
+    const sup = supportLinks(tmp, femaleIndexOf(list), wallEndIndex(list));
+    let v = 0;
+    sup.forEach(l => {
+      const ids = l.c.filter(id => node.has(id));
+      const m = node.pick({ c: ids }, -1, -1);
+      if (m) v += l.f * node.csv(m, -1);
+    });
+    return Math.min(1, v);
+  }
+  function stabilityOf(p) {
+    if (!isStab(p)) return null;
+    const node = S.solved || (S.solved = solveStability(all()));
+    const n = node.get(p.id);
+    return n ? n.s : null;
+  }
+  const pct = v => (v >= 0.995 ? 100 : v < 0.01 && v > 0 ? "<1" : Math.round(v * 100)) + "%";
+
   function validate(c) {
     if (c.L > MAX_LEVEL + 1) return "That's as high as the sandbox goes for now";
     const k = keyOf(c);
@@ -3151,6 +3269,11 @@ const Builder = (function () {
     }
     if (!supported(c)) return REASON[c.kind];
     if (c.kind === "X") { const b = deployBlocked(c); if (b) return b; }
+    if (c.kind !== "F") {
+      const st = candidateStability(c);
+      c.stab = st;
+      if (st !== null && st < COLLAPSE) return "Not stable enough (" + pct(st) + "; Rust needs 5%)";
+    }
     return null;
   }
 
@@ -3384,9 +3507,15 @@ const Builder = (function () {
     emit({ op: "rotate", id: p.id, rot: r3(r) });
   }
   // Rust's stability: anything that loses its support collapses.
+  // Like Rust: pieces left under 5% stability fall, then whatever they were holding is checked again.
   function collapse(ops) {
-    const ok = groundedIds();
-    all().forEach(p => { if (!ok.has(p.id)) ops.push({ type: "remove", p: doRemove(p.id) }); });
+    for (let round = 0; round < 200; round++) {
+      const ok = groundedIds();
+      const node = solveStability(all());
+      const fall = all().filter(p => !ok.has(p.id) || (node.has(p.id) && !node.get(p.id).g && node.get(p.id).s < COLLAPSE));
+      if (!fall.length) { S.solved = node; return; }
+      fall.forEach(p => ops.push({ type: "remove", p: doRemove(p.id) }));
+    }
   }
 
   function commit(ops) {
@@ -3429,7 +3558,9 @@ const Builder = (function () {
     const why = validate(c);
     if (why) return flash(why);
     const p = doPlace(c);
-    commit([{ type: "place", p: snapshot(p) }]);
+    const ops = [{ type: "place", p: snapshot(p) }];
+    collapse(ops);
+    commit(ops);
   }
   function actDemolish(id) {
     const ops = [];
@@ -3601,7 +3732,7 @@ const Builder = (function () {
       const why = validate(c);
       hover = { cand: c, why };
       showGhost(c, !why);
-      if (!flashTimer) setHint(why || "Click to place " + prefabName(c.prefab).toLowerCase(), !!why);
+      if (!flashTimer) setHint(why || "Click to place " + prefabName(c.prefab).toLowerCase() + (c.stab != null && c.kind !== "F" ? " · stability " + pct(c.stab) : ""), !!why);
     } else {
       hideGhost();
       const hit = pieceUnder(sx, sy);
@@ -3684,6 +3815,8 @@ const Builder = (function () {
   }
   function targetLine(it) {
     const t = W.target, nm = (STRUCTURAL.has(t.prefab) ? gradeName(t.grade) + " " : "") + prefabName(t.prefab).toLowerCase();
+    const st = stabilityOf(t);
+    if (st != null && it.id === "demolish") return "Demolish this " + nm + " (stability " + pct(st) + ")";
     if (GRADES[it.id]) return "Upgrade this " + nm + " to " + GRADES[it.id].name.toLowerCase();
     return (it.id === "rotate" ? "Rotate this " : "Demolish this ") + nm;
   }
@@ -3763,6 +3896,10 @@ const Builder = (function () {
     return "Hit a piece to demolish it";
   }
   function toolHint(p) {
+    const st = stabilityOf(p);
+    return toolHintBase(p) + (st != null ? " · stability " + pct(st) : "");
+  }
+  function toolHintBase(p) {
     if (ui.tool === "upgrade") return STRUCTURAL.has(p.prefab) ? "Upgrade " + gradeName(p.grade) + " " + prefabName(p.prefab).toLowerCase() + " to " + gradeName(ui.grade) : prefabName(p.prefab) + " has no grade";
     if (ui.tool === "rotate") return "Rotate " + prefabName(p.prefab).toLowerCase();
     return "Demolish " + prefabName(p.prefab).toLowerCase();
@@ -3794,6 +3931,7 @@ const Builder = (function () {
     $("bRedo").disabled = !S.redo.length;
   }
   function afterChange() {
+    S.solved = null;
     refreshVisibility();
     updateStats();
     save();
@@ -4121,6 +4259,27 @@ const Builder = (function () {
   const testApi = {
     pieces: () => all().map(p => ({ id: p.id, prefab: p.prefab, L: p.L, by: p.by, H: Hof(p), cx: p.cx, cz: p.cz, mx: p.mx, mz: p.mz, rot: p.rot })),
     demolish(id) { actDemolish(id); },
+    stability() { S.solved = null; const n = solveStability(all()); const o = {}; n.forEach((v, id) => { o[id] = { s: v.s, d: v.d }; }); return o; },
+    // Builds pieces directly (no snapping) from a spec in metres: used to check stability against the game.
+    buildRaw(list) {
+      clearAll();
+      const ids = {};
+      list.forEach(sp => {
+        const kind = kindOf(sp.prefab), shape = SHAPE[sp.prefab], [x, y, z] = sp.at || [0, 0, 0];
+        let c = { prefab: sp.prefab, kind, grade: "twigs", L: 0, by: y - 1 };
+        if (kind === "W") { const a = sp.yaw % 180 === 0 ? 0 : 90; Object.assign(c, { mx: x, mz: z, a, nx: cosd(a), nz: sind(a), rot: wallRot(a) }); }
+        else if (sp.attachTo !== undefined) {
+          const host = S.pieces.get(ids[sp.attachTo]);
+          const e = edgesOf(host).sort((p, q) => Math.hypot(p.mx - sp.near[0], p.mz - sp.near[1]) - Math.hypot(q.mx - sp.near[0], q.mz - sp.near[1]))[0];
+          Object.assign(c, attach(e, shape)); c.rot = norm(-c.theta);
+        } else if (kind === "RF") Object.assign(c, { shape, cx: x, cz: z, theta: 0, rot: norm(sp.yaw + 180) });
+        else Object.assign(c, { shape, cx: x, cz: z, theta: sp.theta || 0, rot: norm(-(sp.theta || 0)) });
+        const p = doPlace(c);
+        ids[sp.label] = p.id;
+      });
+      afterChange();
+      return ids;
+    },
     rotate(id) { actRotate(id); },
     setRot(r) { ui.rot = r; },
     setPrefab(prefab) { if (CATALOG_BY_ID[prefab]) { pickDeployable(prefab); selectSlot("deploy"); } else { ui.plan = prefab; selectSlot("plan"); } },
