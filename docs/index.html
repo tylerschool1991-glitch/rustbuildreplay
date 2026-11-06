@@ -5665,12 +5665,49 @@ const Look = (function () {
     const V = { renderer, composer: null, key: "", w: 1, h: 1, frames: [], hidden: [] };
     function setRatio() { renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, preset().ratio)); }
     setRatio();
-    V.setSize = (w, h) => { V.w = w; V.h = h; setRatio(); renderer.setSize(w, h, false); V.key = ""; };
-    function build(scene, camera) {
-      const P = preset();
-      const pr = renderer.getPixelRatio(), W = Math.max(1, Math.floor(V.w * pr)), H = Math.max(1, Math.floor(V.h * pr));
+    // Resizing only resizes the effect buffers; a new quality level (or scene) rebuilds them, and the
+    // old ones are always freed first. (Leaving them behind used to eat graphics memory on every change
+    // until the browser killed the page.)
+    V.setSize = (w, h) => { V.w = w; V.h = h; setRatio(); renderer.setSize(w, h, false); };
+    const pixels = () => { const pr = renderer.getPixelRatio(); return [Math.max(1, Math.floor(V.w * pr)), Math.max(1, Math.floor(V.h * pr))]; };
+    function teardown() {
+      const ps = V.passes;
+      if (ps) {
+        Object.keys(ps).forEach(k => {
+          const pass = ps[k];
+          try {
+            if (pass.dispose) pass.dispose();
+            if (pass.noiseTexture) pass.noiseTexture.dispose();
+            if (pass.material && pass.material.dispose) pass.material.dispose();
+            if (pass.fsQuad && pass.fsQuad.dispose) pass.fsQuad.dispose();
+          } catch (e) { /* already gone */ }
+        });
+      }
       if (V.composer) { V.composer.renderTarget1.dispose(); V.composer.renderTarget2.dispose(); }
-      V.composer = null; V.passes = null;
+      V.composer = null; V.passes = null; V.sized = "";
+    }
+    function resizeEffects() {
+      const [W, H] = pixels();
+      V.composer.setSize(W, H);
+      const ps = V.passes;
+      if (ps.fxaa) ps.fxaa.uniforms.resolution.value.set(1 / W, 1 / H);
+      if (ps.th) { ps.th.uniforms.res.value.set(W, H); ps.tv.uniforms.res.value.set(W, H); }
+    }
+    // If the graphics card drops the page's 3D context (out of memory, driver reset), step down to Low
+    // and carry on when the browser hands it back, instead of leaving a dead page.
+    canvas.addEventListener("webglcontextlost", e => {
+      e.preventDefault();
+      V.lost = true;
+      autoLevel = "low";
+      if (state.quality !== "low") { state.quality = "auto"; save(); }
+      if (typeof setStatus === "function") setStatus("The graphics card ran out of room, so the view switched to Low quality.", true);
+    });
+    canvas.addEventListener("webglcontextrestored", () => { V.lost = false; V.composer = null; V.passes = null; V.key = ""; });
+    function build(scene, camera) {
+      V.builds = (V.builds || 0) + 1; // read by the automated checks
+      const P = preset();
+      const [W, H] = pixels();
+      teardown();
       if (!P.post) return;
       const rt = new THREE.WebGLRenderTarget(W, H, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.HalfFloatType });
       const composer = new THREE.EffectComposer(renderer, rt);
@@ -5712,9 +5749,21 @@ const Look = (function () {
       V.composer = composer; V.passes = passes;
     }
     V.render = (scene, camera, st) => {
+      if (V.lost) return;
+      try { draw(scene, camera, st); }
+      catch (err) {
+        // Never let a rendering error stop the page: drop the effects and draw plainly from now on.
+        if (!V.failed) { V.failed = true; console.error("BuildReplay: effects turned off after an error", err); }
+        teardown(); V.noPost = true;
+        try { renderer.render(scene, camera); } catch (e2) { /* nothing more to do */ }
+      }
+    };
+    function draw(scene, camera, st) {
       const P = preset();
-      const key = level() + ":" + V.w + "x" + V.h + ":" + scene.uuid;
-      if (key !== V.key) { V.key = key; setRatio(); renderer.setSize(V.w, V.h, false); build(scene, camera); }
+      const key = level() + ":" + scene.uuid;
+      if (key !== V.key) { V.key = key; setRatio(); renderer.setSize(V.w, V.h, false); if (V.noPost) teardown(); else build(scene, camera); }
+      const sz = V.w + "x" + V.h + "@" + renderer.getPixelRatio();
+      if (V.composer && sz !== V.sized) { V.sized = sz; resizeEffects(); }
       if (st) {
         renderer.toneMappingExposure = st.exposure || 1;
         st.sun.shadow.mapSize.width !== P.shadow && resizeShadow(st, P.shadow);
@@ -5737,7 +5786,7 @@ const Look = (function () {
       g.warmth.value = cozy() ? 0.55 : 0; g.sat.value = cozy() ? 1.08 : 1; g.vignette.value = cozy() ? 0.55 : 0; g.lift.value = cozy() ? 1 : 0;
       V.composer.render();
       trackFps();
-    };
+    }
     function trackFps() {
       if (state.quality !== "auto") return;
       const now = performance.now();
