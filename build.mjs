@@ -11,7 +11,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const read = p => fs.readFileSync(path.join(here, p), "utf8");
 
 // Order matters: later files use names declared in earlier ones.
-const ORDER = ["measured", "core", "world", "fx", "decor", "autoorder", "samples", "viewer", "walk", "builder", "archive", "main"];
+const ORDER = ["measured", "core", "world", "models", "fx", "decor", "autoorder", "samples", "viewer", "walk", "builder", "archive", "main"];
 
 const css = read("src/styles.css");
 // three.js r128 example modules (MIT), bundled so post-processing doesn't depend on more CDN requests.

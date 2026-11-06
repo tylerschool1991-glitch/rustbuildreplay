@@ -255,7 +255,7 @@ const Builder = (function () {
   const drops = new Map(); // pieces settling into place
 
   const S = { pieces: new Map(), sock: new Map(), events: [], nextId: 1, alias: new Map(), undo: [], redo: [], baseT: 0, resumeAt: null, name: "" };
-  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", recent: ["cupboard.tool.deployed", "box.wooden.large", "door.hinged.metal", "furnace", "sleepingbag_leather_deployed", "autoturret", "workbench1", "generator.wind.scrap"], cat: "Items", search: "", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
+  const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", recent: ["cupboard.tool.deployed", "box.wooden.large", "door.hinged.metal", "furnace", "sleepingbag_leather_deployed", "autoturret", "workbench1", "generator.wind.scrap"], cat: "Essentials", search: "", extraOpen: {}, wb: 1, hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
   let hover = null, lastPointer = null, highlighted = null, flashTimer = null;
 
   const all = () => Array.from(S.pieces.values());
@@ -1354,27 +1354,71 @@ const Builder = (function () {
   }
 
   // Deployables window: category tabs, search, scrolling list of every item.
+  function deployRow(c, o) {
+    o = o || {};
+    const b = el("button", "dock-item" + (c.extra ? " extra" : ""));
+    b.type = "button";
+    b.dataset.prefab = c.id;
+    const isWb = o.workbench, id = isWb ? "workbench" + ui.wb : c.id, shown = CATALOG_BY_ID[id];
+    b.title = (isWb ? "Workbench" : c.name) + " · " + sizeText(shown) + " (measured)";
+    const active = ui.slot === "deploy" && (isWb ? /^workbench[123]$/.test(ui.deploy) : c.id === ui.deploy);
+    b.setAttribute("aria-pressed", String(active));
+    const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(id);
+    const txt = el("span", "dock-text");
+    const meta = (o.showCat ? c.cat + " · " : "") + (c.extra && o.showCat ? "Skin/seasonal · " : "") + MOUNT[shown.place] + " · " + sizeText(shown);
+    txt.append(el("span", "dock-name", isWb ? "Workbench" : c.name), el("span", "dock-meta", meta));
+    b.append(ic, txt);
+    if (isWb) {
+      const lv = el("span", "dock-levels");
+      lv.setAttribute("role", "group"); lv.setAttribute("aria-label", "Workbench level");
+      [1, 2, 3].forEach(n => {
+        const k = el("span", "dock-lv", String(n));
+        k.setAttribute("role", "button"); k.tabIndex = 0;
+        k.title = "Workbench level " + n;
+        k.setAttribute("aria-pressed", String(ui.wb === n));
+        const pick = e => { e.stopPropagation(); ui.wb = n; pickDeployable("workbench" + n); selectSlot("deploy"); };
+        k.addEventListener("click", pick);
+        k.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(e); } });
+        lv.appendChild(k);
+      });
+      b.appendChild(lv);
+    }
+    b.addEventListener("click", () => { pickDeployable(id); selectSlot("deploy"); });
+    return b;
+  }
   function renderDeployList() {
     const list = $("deployList");
     list.innerHTML = "";
     const term = ui.search.trim().toLowerCase();
-    const items = CATALOG.filter(c => term ? (c.name.toLowerCase().indexOf(term) >= 0 || c.id.indexOf(term) >= 0) : c.cat === ui.cat);
-    items.forEach(c => {
-      const b = el("button", "dock-item");
-      b.type = "button";
-      b.dataset.prefab = c.id;
-      b.title = c.name + " · " + sizeText(c) + " (measured)";
-      b.setAttribute("aria-pressed", String(ui.slot === "deploy" && c.id === ui.deploy));
-      const ic = el("span", "dock-icon"); ic.innerHTML = isoIcon(c.id);
-      const txt = el("span", "dock-text");
-      txt.append(el("span", "dock-name", c.name), el("span", "dock-meta", (term ? c.cat + " · " : "") + MOUNT[c.place] + " · " + sizeText(c)));
-      b.append(ic, txt);
-      b.addEventListener("click", () => { pickDeployable(c.id); selectSlot("deploy"); });
-      list.appendChild(b);
-    });
-    if (!items.length) list.appendChild(el("p", "dock-empty", "Nothing matches “" + ui.search.trim() + "”."));
+    let count = 0;
+    if (term) {
+      const items = CATALOG.filter(c => c.name.toLowerCase().indexOf(term) >= 0 || c.id.indexOf(term) >= 0)
+        .sort((a, b) => (a.extra - b.extra) || a.name.localeCompare(b.name));
+      items.forEach(c => list.appendChild(deployRow(c, { showCat: true })));
+      count = items.length;
+      if (!items.length) list.appendChild(el("p", "dock-empty", "Nothing matches “" + ui.search.trim() + "”."));
+    } else if (ui.cat === "Essentials") {
+      ESSENTIALS.forEach(id => list.appendChild(deployRow(CATALOG_BY_ID[id], { workbench: id === "workbench1" })));
+      count = ESSENTIALS.length;
+    } else {
+      const main = CATALOG.filter(c => c.cat === ui.cat && !c.extra), extra = CATALOG.filter(c => c.cat === ui.cat && c.extra);
+      main.forEach(c => list.appendChild(deployRow(c)));
+      count = main.length;
+      if (!main.length) list.appendChild(el("p", "dock-empty", "Nothing here is used much in base building; it's all in the section below."));
+      if (extra.length) {
+        const open = !!ui.extraOpen[ui.cat];
+        const h = el("button", "dock-extra-head");
+        h.type = "button";
+        h.setAttribute("aria-expanded", String(open));
+        h.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2l4 4-4 4"/></svg>';
+        h.append(document.createTextNode("Skins, seasonal & decor"), el("span", "dock-extra-n", String(extra.length)));
+        h.addEventListener("click", () => { ui.extraOpen[ui.cat] = !open; renderDeployList(); if (!open) h.scrollIntoView({ block: "nearest" }); });
+        list.appendChild(h);
+        if (open) extra.forEach(c => list.appendChild(deployRow(c)));
+      }
+    }
     document.querySelectorAll("#deployTabs button").forEach(b => b.setAttribute("aria-pressed", String(!term && b.dataset.cat === ui.cat)));
-    $("deployCount").textContent = items.length + (items.length === 1 ? " item" : " items");
+    $("deployCount").textContent = count + (count === 1 ? " item" : " items");
   }
   const MOUNT = { free: "Floor or ground", doorway: "Doorway", frame: "Wall frame", window: "Window", hatch: "Floor frame", "hatch.tri": "Triangle floor frame" };
   function buildDeployWindow() {
@@ -1599,7 +1643,9 @@ const Builder = (function () {
       list.forEach(sp => {
         const kind = kindOf(sp.prefab), shape = SHAPE[sp.prefab], [x, y, z] = sp.at || [0, 0, 0];
         let c = { prefab: sp.prefab, kind, grade: sp.grade || "twigs", L: 0, by: y - 1 };
-        if (kind === "W") { const a = sp.yaw % 180 === 0 ? 0 : 90; Object.assign(c, { mx: x, mz: z, a, nx: cosd(a), nz: sind(a), rot: wallRot(a) }); }
+        if (kind === "W" || kind === "D") { const a = sp.yaw % 180 === 0 ? 0 : 90; Object.assign(c, { mx: x, mz: z, a, nx: cosd(a), nz: sind(a), rot: wallRot(a) }); }
+        else if (kind === "X") Object.assign(c, { x, z, rot: sp.yaw || 0, ground: !!sp.ground, grade: "wood" });
+        else if (kind === "H") Object.assign(c, { shape: "sq", cx: x, cz: z, theta: 0, rot: 0, grade: "wood" });
         else if (sp.attachTo !== undefined) {
           const host = S.pieces.get(ids[sp.attachTo]);
           const e = edgesOf(host).sort((p, q) => Math.hypot(p.mx - sp.near[0], p.mz - sp.near[1]) - Math.hypot(q.mx - sp.near[0], q.mz - sp.near[1]))[0];

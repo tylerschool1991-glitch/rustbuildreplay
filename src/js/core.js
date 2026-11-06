@@ -170,8 +170,27 @@ function fillGradeBar(bar, grades) {
 // h its height; b is its bounds box and cols its collision boxes, all in metres in the item's local space.
 // mount: free (floor, foundation or ground), doorway, frame (double-door wall frame), window,
 // hatch / hatch.tri (square or triangle floor frame).
-const DEPLOY_CATS = ["Construction", "Items", "Electrical", "Traps", "Fun", "Siege", "Misc"];
-const CATALOG = MEASURED.map(([id, name, cat, place, b, cols]) => ({ id, name, cat, place, b, cols, w: b[3], h: b[4], d: b[5] }));
+const DEPLOY_CATS = ["Essentials", "Construction", "Items", "Electrical", "Traps", "Fun", "Siege", "Misc"];
+// The items most bases are built around, in the order they're listed. Workbench stands for all three levels.
+const ESSENTIALS = ["door.hinged.metal", "door.hinged.toptier", "door.double.hinged.metal", "wall.frame.garagedoor", "floor.ladder.hatch",
+  "shutter.metal.embrasure.a", "cupboard.tool.deployed", "box.wooden.large", "workbench1", "furnace", "furnace.large",
+  "sleepingbag_leather_deployed", "autoturret", "guntrap", "wall.external.high.stone"];
+// Skin versions, seasonal and event items, and decoration: kept, but tucked into their own section.
+const EXTRA_RE = new RegExp([
+  "xmas", "advent", "stocking", "snowman", "snowmachine", "\\.ice\\b", "^wall\\.ice", "icethrone", "halloween", "pumpkin", "jackolantern",
+  "skull", "scarecrow", "coffin", "gravestone", "cursed", "spooky", "spiderweb", "woodcross", "frankenstein", "graveyard", "easter",
+  "rustige", "lunar", "chinese", "dragon", "newyeargong", "firework", "skylantern", "confetti", "balloon", "giantcandy", "giantlollipop",
+  "pinata", "candles", "medieval", "legacy", "retro", "shockbyte", "frontier", "boat", "adobe", "krieg", "abyss", "bamboo", "gamesroom",
+  "twitchrivals", "trophy", "plush", "youtooz", "pookie", "charity", "secretlab", "bardoors", "wicker", "hobobarrel", "minecart",
+  "rail\\.road", "bathtub", "rockingchair\\.", "sofa\\.pattern", "innertube\\.", "disco", "beach", "pool", "boogieboard", "ejector",
+  "pilot", "gunrack\\.single", "doorknocker", "^industrial\\.(autoturret|furnace|electric\\.furnace|garagedoor)", "door\\.hinged\\.industrial",
+  "mirror", "photoframe", "pictureframe", "woodframe", "goldframe", "scrapframe", "lightup", "artistcanvas", "^rug", "wantedposter",
+  "mannequin", "plantpot", "sculpture", "banner", "neon", "beanbag", "bar\\.stool", "^sofa", "^chair$", "^table$", "cardtable",
+  "discord", "fogmachine", "strobelight", "laserlight", "soundlight", "drumkit", "piano", "xylophone", "microphonestand",
+  "connected\\.speaker", "jukebox", "boombox", "dartboard", "telephone", "kayak", "skidoo", "^sail$", "^anchor$", "steeringwheel",
+  "smallengine", "^cannon$", "clantable", "spinner\\.wheel", "arcade", "car_radio", "easel", "^sled$", "^innertube$"
+].join("|"));
+const CATALOG = MEASURED.map(([id, name, cat, place, b, cols]) => ({ id, name, cat, place, b, cols, w: b[3], h: b[4], d: b[5], extra: EXTRA_RE.test(id) }));
 const CATALOG_BY_ID = {};
 CATALOG.forEach(c => { CATALOG_BY_ID[c.id] = c; if (!PREFAB_NAMES[c.id]) PREFAB_NAMES[c.id] = c.name; });
 const sizeText = c => c.w.toFixed(2) + " × " + c.d.toFixed(2) + " × " + c.h.toFixed(2) + " m";

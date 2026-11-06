@@ -314,7 +314,17 @@ function partsFor(prefab) {
     // Measured sockets: a ramp climbs 0.75 m over its 3 m.
     case "ramp": return [SLAB(SQUARE, [0, 0, 0.75, 0.75], 0.2)];
     default: {
-      // Deployables: their measured collision boxes (or bounds), placed by how the item mounts.
+      if (ITEM_MODELS[prefab]) return ITEM_MODELS[prefab]();
+      return measuredParts(prefab);
+    }
+  }
+}
+// Our own models for the most-used items (filled in by models.js).
+const ITEM_MODELS = {};
+// Deployables as their measured collision boxes (or bounds), placed by how the item mounts.
+function measuredParts(prefab) {
+  {
+    {
       const c = CATALOG_BY_ID[prefab];
       if (!c) return [B(0.8, 0.8, 0.8, 0, 0.4, 0, "generic")];
       const m = "cat" + c.cat;
@@ -338,7 +348,7 @@ function collisionParts(prefab) {
         B(WINDOW_W, WINDOW_BOTTOM, T, 0, WINDOW_BOTTOM / 2, 0), B(WINDOW_W, 3 - top, T, 0, (3 + top) / 2, 0)];
     }
     case "wall.frame": return [B(0.18, 3, T, -1.41, 1.5, 0), B(0.18, 3, T, 1.41, 1.5, 0), B(2.64, 0.19, T, 0, 2.905, 0)];
-    default: return partsFor(prefab).filter(p => !p.outline);
+    default: return CATALOG_BY_ID[prefab] ? measuredParts(prefab) : partsFor(prefab).filter(p => !p.outline);
   }
 }
 
