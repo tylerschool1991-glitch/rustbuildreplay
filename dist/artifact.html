@@ -497,7 +497,7 @@ html.cinema .cinema-exit { display: block; }
   <main class="workspace sandbox" id="view-build" hidden>
     <section class="stage" aria-label="Sandbox build area">
       <div class="viewport" id="bviewport">
-        <canvas id="bcanvas" aria-label="3D build area. Click to use the selected tool, hold right-click for the wheel, drag to orbit."></canvas>
+        <canvas id="bcanvas" aria-label="3D build area. Click to use the selected tool, hold right-click for the wheel and left-click an option to pick it, drag to orbit."></canvas>
 
         <div class="now-card tool-card">
           <div class="now-kicker" id="bKicker">Building Plan · Ground floor</div>
@@ -571,7 +571,7 @@ html.cinema .cinema-exit { display: block; }
           <button class="tbtn" id="lvlUp" type="button" aria-label="Floor up" title="Floor up (])">+</button>
         </div>
         <label class="tog"><input type="checkbox" id="optHideAbove" checked> Hide floors above</label>
-        <p class="keys"><b>Hold right-click</b> for the wheel · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · <b>V</b> walk · drag to orbit, scroll to zoom</p>
+        <p class="keys"><b>Hold right-click</b> for the wheel, <b>left-click</b> to pick · <b>1</b> building plan · <b>2</b> hammer · <b>R</b> rotate · <b>[ ]</b> floor · <b>WASD</b> move · <b>V</b> walk · drag to orbit, scroll to zoom</p>
         <button class="tbtn" id="bUndo" type="button" aria-label="Undo" title="Undo (Ctrl+Z)">
           <svg viewBox="0 0 16 16"><path d="M6 3 2 7l4 4V8.5h4a2.5 2.5 0 0 1 0 5H8V15h2a4 4 0 0 0 0-8H6z"/></svg>
         </button>
@@ -8234,7 +8234,7 @@ const Builder = (function () {
     wheelEl.style.top = W.cy + "px";
     wheelEl.style.setProperty("--wheel-scale", W.scale);
     wheelEl.hidden = false;
-    W.open = true; W.sticky = !!sticky; W.hovered = null; W.openedAt = performance.now(); W.start = [sx, sy];
+    W.open = true; W.sticky = !!sticky; W.btns = sticky ? 0 : 2; W.hovered = null; W.openedAt = performance.now(); W.start = [sx, sy];
     // Like Rust: the hammer wheel acts on the piece you were looking at when you opened it.
     W.target = null;
     if (ui.slot === "hammer" && !sticky) { const hit = pieceUnder(sx, sy); if (hit) W.target = hit.piece; }
@@ -8647,7 +8647,7 @@ const Builder = (function () {
     canvas.addEventListener("pointermove", e => { if (Walk.active()) return; lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
     canvas.addEventListener("pointerdown", e => {
       if (Walk.active()) return;
-      if (W.open) { e.preventDefault(); closeWheel(false); return; }
+      if (W.open) { e.preventDefault(); closeWheel(e.button === 0 && !!W.hovered); return; }
       if (e.button === 2) {
         e.preventDefault();
         const [sx, sy] = local(e.clientX, e.clientY);
@@ -8665,18 +8665,34 @@ const Builder = (function () {
       updateHover();
       act();
     });
-    // While the wheel is held open with the right button, track the pointer anywhere and pick on release.
+    // Like Rust: hold right-click to open the wheel, point at an option, left-click to pick it.
+    // Letting go of right-click without clicking just closes it.
+    // A left press while the right button is held is a "chorded" press: browsers report it as a
+    // pointermove whose buttons now include the left one, not as a pointerdown.
+    function heldPick(e) {
+      const [sx, sy] = local(e.clientX, e.clientY);
+      wheelHover(sx, sy);
+      if (W.hovered) closeWheel(true);
+    }
     window.addEventListener("pointermove", e => {
       if (!W.open || W.sticky) return;
+      const leftNow = (e.buttons & 1) === 1, leftBefore = (W.btns & 1) === 1;
+      W.btns = e.buttons;
+      if (leftNow && !leftBefore) { e.preventDefault(); heldPick(e); return; }
       const [sx, sy] = local(e.clientX, e.clientY);
       wheelHover(sx, sy);
     });
+    window.addEventListener("mousedown", e => {
+      if (!W.open || W.sticky || e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      heldPick(e);
+    }, true);
     window.addEventListener("pointerup", e => {
       if (!W.open || W.sticky || e.button !== 2) return;
       const [sx, sy] = local(e.clientX, e.clientY);
       const quick = performance.now() - W.openedAt < 400 && Math.hypot(sx - W.start[0], sy - W.start[1]) < 8;
       if (quick && !W.hovered) { W.sticky = true; return; } // a quick right-click leaves it open for clicking
-      closeWheel(true);
+      closeWheel(false);
     });
     canvas.addEventListener("pointerleave", () => { if (!W.open && !Walk.active()) { hideGhost(); clearHighlight(); hover = null; } });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);

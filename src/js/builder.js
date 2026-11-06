@@ -1155,7 +1155,7 @@ const Builder = (function () {
     wheelEl.style.top = W.cy + "px";
     wheelEl.style.setProperty("--wheel-scale", W.scale);
     wheelEl.hidden = false;
-    W.open = true; W.sticky = !!sticky; W.hovered = null; W.openedAt = performance.now(); W.start = [sx, sy];
+    W.open = true; W.sticky = !!sticky; W.btns = sticky ? 0 : 2; W.hovered = null; W.openedAt = performance.now(); W.start = [sx, sy];
     // Like Rust: the hammer wheel acts on the piece you were looking at when you opened it.
     W.target = null;
     if (ui.slot === "hammer" && !sticky) { const hit = pieceUnder(sx, sy); if (hit) W.target = hit.piece; }
@@ -1568,7 +1568,7 @@ const Builder = (function () {
     canvas.addEventListener("pointermove", e => { if (Walk.active()) return; lastPointer = local(e.clientX, e.clientY); if (!down && !W.open) updateHover(); });
     canvas.addEventListener("pointerdown", e => {
       if (Walk.active()) return;
-      if (W.open) { e.preventDefault(); closeWheel(false); return; }
+      if (W.open) { e.preventDefault(); closeWheel(e.button === 0 && !!W.hovered); return; }
       if (e.button === 2) {
         e.preventDefault();
         const [sx, sy] = local(e.clientX, e.clientY);
@@ -1586,18 +1586,34 @@ const Builder = (function () {
       updateHover();
       act();
     });
-    // While the wheel is held open with the right button, track the pointer anywhere and pick on release.
+    // Like Rust: hold right-click to open the wheel, point at an option, left-click to pick it.
+    // Letting go of right-click without clicking just closes it.
+    // A left press while the right button is held is a "chorded" press: browsers report it as a
+    // pointermove whose buttons now include the left one, not as a pointerdown.
+    function heldPick(e) {
+      const [sx, sy] = local(e.clientX, e.clientY);
+      wheelHover(sx, sy);
+      if (W.hovered) closeWheel(true);
+    }
     window.addEventListener("pointermove", e => {
       if (!W.open || W.sticky) return;
+      const leftNow = (e.buttons & 1) === 1, leftBefore = (W.btns & 1) === 1;
+      W.btns = e.buttons;
+      if (leftNow && !leftBefore) { e.preventDefault(); heldPick(e); return; }
       const [sx, sy] = local(e.clientX, e.clientY);
       wheelHover(sx, sy);
     });
+    window.addEventListener("mousedown", e => {
+      if (!W.open || W.sticky || e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      heldPick(e);
+    }, true);
     window.addEventListener("pointerup", e => {
       if (!W.open || W.sticky || e.button !== 2) return;
       const [sx, sy] = local(e.clientX, e.clientY);
       const quick = performance.now() - W.openedAt < 400 && Math.hypot(sx - W.start[0], sy - W.start[1]) < 8;
       if (quick && !W.hovered) { W.sticky = true; return; } // a quick right-click leaves it open for clicking
-      closeWheel(true);
+      closeWheel(false);
     });
     canvas.addEventListener("pointerleave", () => { if (!W.open && !Walk.active()) { hideGhost(); clearHighlight(); hover = null; } });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(viewport);
