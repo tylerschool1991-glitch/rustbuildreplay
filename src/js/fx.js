@@ -383,7 +383,7 @@ const Look = (function () {
     const tOrbit = toggle("orbit", "Slow orbit", "The camera drifts slowly around the build");
     toggles.append(tMini, tOrbit);
     let tFollow = null;
-    if (opts.follow) { tFollow = toggle("follow", "Follow the build", "During a replay the camera eases toward each new piece"); toggles.append(tFollow); }
+    if (opts.follow) { tFollow = toggle("follow", "Director camera", "During a replay the camera glides to each new piece, from an angle where nothing blocks the view"); toggles.append(tFollow); }
     const cine = el("button", "btn look-cine", "Cinematic view");
     cine.type = "button";
     cine.title = "Hides the interface. Press Esc or click to come back.";

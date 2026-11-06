@@ -447,7 +447,7 @@ function makePiece(e, y0) {
   group.position.set(e.pos[0], e.pos[1], e.pos[2]);
   group.rotation.y = (e.rot || 0) * Math.PI / 180;
   group.visible = false;
-  return { group, structural, level: levelOf(e.pos[1], y0), baseY: e.pos[1] };
+  return { group, structural, prefab: e.prefab, level: levelOf(e.pos[1], y0), baseY: e.pos[1] };
 }
 
 // ---------- Line-art icons ----------
@@ -648,7 +648,7 @@ function applyPieces(world, state, maxLevel) {
     if (present) pc.group.rotation.y = (s.rot || 0) * Math.PI / 180;
     if (present && pc.structural) {
       const m = MATS[s.grade] || MATS.twigs;
-      pc.group.children.forEach(ch => { if (ch.isMesh) ch.material = m; });
+      pc.group.children.forEach(ch => { if (ch.isMesh && !ch.userData.ghost) ch.material = m; });
     }
   });
   return up;

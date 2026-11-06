@@ -91,6 +91,7 @@ function route() {
   window.BuildReplayTest = Builder.test; // used by automated checks
   window.BuildReplayWalk = Walk.test;
   window.BuildReplayLook = Look;
+  window.BuildReplayViewer = Viewer.test;
   window.addEventListener("hashchange", route);
   route();
 })();

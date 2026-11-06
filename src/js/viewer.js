@@ -8,8 +8,6 @@ const Viewer = (function () {
   const scene = stage.scene;
   const dust = makeDust(scene);
   let decor = null;
-  const followGoal = new THREE.Vector3();
-  let followSet = false;
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
   const controls = new THREE.OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -20,6 +18,8 @@ const Viewer = (function () {
   controls.autoRotateSpeed = 0.35;
   const root = new THREE.Group();
   scene.add(root);
+  const director = makeDirector(camera, controls, root);
+  controls.addEventListener("start", () => director.pauseMs(5000)); // you took the camera
 
   let log = null, world = null;
   let view = [], duration = 0, idx = 0, pt = 0, playing = false, speed = 16, maxLevel = 99;
@@ -80,10 +80,23 @@ const Viewer = (function () {
     return lo;
   }
 
+  const directing = () => Look.state.follow;
   function sync(animate) {
-    const n = countUpTo(pt);
+    let n = countUpTo(pt);
     if (n !== idx) {
       const forward = n > idx && idx >= 0;
+      // Director camera: stop at the first new piece that isn't already in view, while the camera gets there.
+      if (forward && animate && playing && directing()) {
+        const nowS = performance.now() / 1000;
+        for (let i = idx; i < n; i++) {
+          const e = view[i], pc = world.pieces.get(e.id);
+          if (e.op !== "place" || !pc || pc.level > maxLevel) continue;
+          // Check it against everything placed before it, including earlier pieces in this same frame.
+          applyPieces(world, stateAt(view, i + 1), maxLevel);
+          if (director.placed(e.id, nowS)) { n = i + 1; pt = e.pt; break; }
+        }
+      }
+      if (!forward || !animate) director.off();
       if (!forward || !animate || reduceMotion) resetAnims();
       standing = applyPieces(world, stateAt(view, n), maxLevel);
       if (forward && animate && !reduceMotion && n - idx < 40) {
@@ -91,7 +104,6 @@ const Viewer = (function () {
         for (let i = idx; i < n; i++) {
           const e = view[i];
           if (e.op === "place" || e.op === "upgrade") anims.set(e.id, { type: e.op, start: now });
-          if (e.op === "place") { followGoal.set(e.pos[0], e.pos[1] + 1, e.pos[2]); followSet = true; }
         }
       }
       idx = n;
@@ -243,7 +255,7 @@ const Viewer = (function () {
     buildDecor();
     stage.gridWanted = !world.hasTerrain;
     stage.grid.visible = !world.hasTerrain && !Look.cozy();
-    followSet = false;
+    director.setWorld(world, heightSampler(log.terrain));
     const f = frameFor(log, world.y0);
     controls.target.copy(f.target);
     camera.position.copy(f.position);
@@ -307,7 +319,7 @@ const Viewer = (function () {
   orbitBox.checked = Look.state.orbit;
   orbitBox.addEventListener("change", e => Look.set({ orbit: e.target.checked }));
   Look.onChange(st => { orbitBox.checked = st.orbit; });
-  Look.onChange(() => { if (log && world && decor && decor.level !== Look.level()) buildDecor(); });
+  Look.onChange(st => { if (log && world && decor && decor.level !== Look.level()) buildDecor(); if (!st.follow) director.off(); });
   Look.mountPanel(viewport, { follow: true, onCinema: on => { if (on && !playing) { if (pt >= duration) { pt = 0; forceSync(); } setPlaying(true); } } });
 
   document.addEventListener("keydown", e => {
@@ -355,7 +367,7 @@ const Viewer = (function () {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (active && world) {
-      if (playing) {
+      if (playing && !(directing() && director.gating())) {
         pt += dt * speed;
         if (pt >= duration) { pt = duration; setPlaying(false); }
         sync(true);
@@ -364,14 +376,10 @@ const Viewer = (function () {
       dust.update(dt);
       Look.tick(dt);
       fly.step(dt, camera, controls);
-      // Follow the build: during a replay the camera eases toward where pieces are going up.
-      if (playing && followSet && Look.state.follow && !reduceMotion) {
-        const k = 1 - Math.exp(-dt * 0.9);
-        const dx = (followGoal.x - controls.target.x) * k, dy = (followGoal.y - controls.target.y) * k * 0.6, dz = (followGoal.z - controls.target.z) * k;
-        controls.target.x += dx; controls.target.y += dy; controls.target.z += dz;
-        camera.position.x += dx; camera.position.y += dy; camera.position.z += dz;
-      }
-      controls.autoRotate = Look.state.orbit && !reduceMotion;
+      // Director camera: during a replay, glide to each new piece from an angle where it can be seen.
+      const dirNow = directing() && (playing || director.busy());
+      if (dirNow) director.update(dt, now / 1000, playing, reduceMotion);
+      controls.autoRotate = Look.state.orbit && !reduceMotion && !dirNow;
       controls.update();
       Look.follow(stage, controls.target);
       gfx.render(scene, camera, stage);
@@ -380,8 +388,18 @@ const Viewer = (function () {
   }
   requestAnimationFrame(tick);
 
+  const test = {
+    play(sp) { if (sp) speed = sp; if (!playing) ui.play.click(); },
+    stop() { setPlaying(false); },
+    restart() { setPlaying(false); pt = 0; forceSync(); },
+    last() { for (let i = idx - 1; i >= 0; i--) if (view[i].op === "place") return { id: view[i].id, prefab: view[i].prefab, moving: director.busy(), check: director.check(view[i].id) }; return null; },
+    progress: () => [idx, view.length],
+    shots: () => director.history(),
+    decisions: () => director.decisions(),
+    events: () => view.map(e => [e.op, e.id, e.prefab || ""])
+  };
   return {
-    open,
+    open, test,
     setActive(v) { active = v; if (!v) setPlaying(false); else resize(); },
     viewport
   };
