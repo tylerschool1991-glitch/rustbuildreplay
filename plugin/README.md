@@ -84,3 +84,7 @@ Rust works out a stability percentage for every building piece and collapses any
 2. In the server console, type: `brstability`
 3. (You can also run it from the F1 console while standing in an open area in game; then it builds the tests around you.) It builds about 20 small test structures (walls stacked, floors overhanging, bridges, half walls, roofs, triangles) on flat empty spots around the map, with collapse switched off so weak pieces stay up. After about 30 seconds it records every piece's stability and the supports Rust found, deletes everything it built, and switches collapse back on.
 4. When the console says `stability measured`, send `oxide/data/BuildReplay/stability.json` (Carbon: `carbon/data/BuildReplay/stability.json`).
+
+## Doors and hatches (`brdoors`, version 0.6)
+
+Records how doors, double doors, the garage door, ladder hatches, shutters and high external gates are put together (hinge pivots, lock and slot positions, colliders) and what changes when they open. Same steps as `brstability`: replace the plugin file, type `brdoors` in the server console, wait for `doors measured` (about 6 seconds), and send `oxide/data/BuildReplay/doors.json`.

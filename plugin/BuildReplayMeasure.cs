@@ -16,7 +16,11 @@ namespace Oxide.Plugins
     // settle, records every piece's stability and the supports it found, then deletes everything it built.
     // While it runs (about 30 seconds) collapse is switched off so nothing falls; the setting is put back after.
     // Results: data/BuildReplay/stability.json. Run it on a local test server, not a live one.
-    [Info("BuildReplayMeasure", "BuildReplay", "0.5.2")]
+    //
+    // `brdoors` (0.6) builds each door, hatch and shutter on its own in the air, records its parts (hinge
+    // pivots, lock and slot positions, colliders) closed, opens it, records them again open, then deletes
+    // it. Results: data/BuildReplay/doors.json.
+    [Info("BuildReplayMeasure", "BuildReplay", "0.6.0")]
     [Description("Dumps exact sizes of deployables and building pieces for the BuildReplay sandbox.")]
     public class BuildReplayMeasure : RustPlugin
     {
@@ -787,6 +791,201 @@ namespace Oxide.Plugins
                     try { d[f.Name] = Dump(f.GetValue(v), depth + 1, max); } catch { }
                 }
             return d;
+        }
+
+        // ---------------------------------------------------------------------------------------------
+        // brdoors: how doors, hatches and shutters are built and how they open.
+        // ---------------------------------------------------------------------------------------------
+        private static readonly string[] DoorIds = {
+            "door.hinged.wood", "door.hinged.metal", "door.hinged.toptier",
+            "door.double.hinged.wood", "door.double.hinged.metal", "door.double.hinged.toptier",
+            "wall.frame.garagedoor", "floor.ladder.hatch", "floor.triangle.ladder.hatch", "floor.ladder.hatch.toptier",
+            "shutter.wood.a", "shutter.metal.embrasure.a", "shutter.metal.embrasure.b",
+            "gates.external.high.stone", "gates.external.high.wood"
+        };
+        private class DoorSample
+        {
+            public string prefab;
+            public string path;
+            public string type;
+            public float[] origin;
+            public string openMethod;
+            public object fields;
+            public object sockets;
+            public object closed;
+            public object open;
+            [Newtonsoft.Json.JsonIgnore] public BaseEntity entity;
+        }
+        private class DoorOutput
+        {
+            public string format = "build-replay-doors/1";
+            public string measuredAt;
+            public string rustVersion;
+            public List<DoorSample> doors = new List<DoorSample>();
+            public List<string> errors = new List<string>();
+        }
+        private DoorOutput doorRun;
+
+        private string AnyPrefabPath(string shortName)
+        {
+            string best = null;
+            foreach (var str in StringPool.toString.Values)
+            {
+                if (str == null) continue;
+                var lower = str.ToLowerInvariant();
+                if (!lower.EndsWith("/" + shortName + ".prefab")) continue;
+                if (best == null || (lower.Contains("/deployable/") && !best.ToLowerInvariant().Contains("/deployable/"))) best = str;
+            }
+            return best;
+        }
+
+        // Every transform under the entity (relative to the entity), and every collider with its bounds.
+        private object Snapshot(BaseEntity ent)
+        {
+            var root = ent.transform;
+            var nodes = new List<object>();
+            var stack = new Stack<KeyValuePair<Transform, string>>();
+            stack.Push(new KeyValuePair<Transform, string>(root, root.name));
+            while (stack.Count > 0 && nodes.Count < 400)
+            {
+                var kv = stack.Pop();
+                var t = kv.Key;
+                var comps = new List<string>();
+                foreach (var c in t.GetComponents<Component>()) if (c != null && !(c is Transform)) comps.Add(c.GetType().Name);
+                nodes.Add(new Dictionary<string, object> {
+                    ["path"] = kv.Value,
+                    ["active"] = t.gameObject.activeSelf,
+                    ["pos"] = V(root.InverseTransformPoint(t.position)),
+                    ["rot"] = V((Quaternion.Inverse(root.rotation) * t.rotation).eulerAngles),
+                    ["localPos"] = V(t.localPosition),
+                    ["localRot"] = V(t.localEulerAngles),
+                    ["scale"] = V(t.localScale),
+                    ["components"] = comps
+                });
+                for (var i = t.childCount - 1; i >= 0; i--) { var ch = t.GetChild(i); stack.Push(new KeyValuePair<Transform, string>(ch, kv.Value + "/" + ch.name)); }
+            }
+            var cols = new List<object>();
+            foreach (var c in root.GetComponentsInChildren<Collider>(true))
+            {
+                var b = c.bounds;
+                cols.Add(new Dictionary<string, object> {
+                    ["name"] = c.name, ["type"] = c.GetType().Name, ["enabled"] = c.enabled, ["activeInHierarchy"] = c.gameObject.activeInHierarchy,
+                    ["trigger"] = c.isTrigger, ["layer"] = LayerMask.LayerToName(c.gameObject.layer),
+                    ["center"] = V(root.InverseTransformPoint(b.center)), ["size"] = V(b.size)
+                });
+            }
+            return new Dictionary<string, object> { ["flags"] = ent.flags.ToString(), ["nodes"] = nodes, ["colliders"] = cols };
+        }
+
+        // The fields a door type declares itself (not everything every entity has).
+        private object OwnFields(object o)
+        {
+            var d = new Dictionary<string, object>();
+            for (var t = o.GetType(); t != null && t != typeof(DecayEntity) && t != typeof(BaseCombatEntity) && t != typeof(BaseEntity); t = t.BaseType)
+                foreach (var f in t.GetFields(AllInstance))
+                {
+                    if (d.ContainsKey(f.Name)) continue;
+                    try { d[t.Name + "." + f.Name] = Dump(f.GetValue(o), 0, 2); } catch { }
+                }
+            return d;
+        }
+
+        [ConsoleCommand("brdoors")]
+        private void CmdDoors(ConsoleSystem.Arg arg)
+        {
+            if (arg.Connection != null && arg.Connection.authLevel < 2) { arg.ReplyWith("Run this from the server console (or as an owner)."); return; }
+            if (doorRun != null) { arg.ReplyWith("BuildReplay: a door run is already going; give it a few seconds."); return; }
+            doorRun = new DoorOutput { measuredAt = DateTime.UtcNow.ToString("o"), rustVersion = Rust.Protocol.printable };
+            labels.Clear();
+            // Nothing holds these up, so keep stability from collapsing them while they're measured.
+            FieldInfo collapse = null; object collapseWas = null;
+            try
+            {
+                var conv = FindType("ConVar.Stability");
+                collapse = conv != null ? conv.GetField("collapse", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static) : null;
+                if (collapse != null) { collapseWas = collapse.GetValue(null); collapse.SetValue(null, 0f); }
+            }
+            catch (Exception ex) { doorRun.errors.Add("collapse convar: " + ex.Message); }
+            var used = new List<Vector3>();
+            foreach (var id in DoorIds)
+            {
+                var sample = new DoorSample { prefab = id };
+                doorRun.doors.Add(sample);
+                try
+                {
+                    var path = AnyPrefabPath(id);
+                    if (path == null) { doorRun.errors.Add(id + ": prefab not found"); continue; }
+                    sample.path = path;
+                    var spot = SkySpot(used);
+                    if (spot == null) { doorRun.errors.Add(id + ": no room"); continue; }
+                    used.Add(spot.Value);
+                    sample.origin = V(spot.Value);
+                    var ent = GameManager.server.CreateEntity(path, spot.Value, Quaternion.identity, true);
+                    if (ent == null) { doorRun.errors.Add(id + ": CreateEntity returned null"); continue; }
+                    ent.Spawn();
+                    sample.entity = ent;
+                    sample.type = ent.GetType().Name;
+                    labels[ent] = id;
+                    sample.fields = OwnFields(ent);
+                    try
+                    {
+                        var socks = PrefabAttribute.server.FindAll<Socket_Base>(ent.prefabID);
+                        var list = new List<object>();
+                        if (socks != null) foreach (var sk in socks) list.Add(Dump(sk, 0, 2));
+                        sample.sockets = list;
+                    }
+                    catch (Exception ex) { doorRun.errors.Add(id + " sockets: " + ex.Message); }
+                }
+                catch (Exception ex) { doorRun.errors.Add(id + ": " + (ex.InnerException ?? ex).Message); }
+            }
+            arg.ReplyWith("BuildReplay: built " + doorRun.doors.Count(d => d.entity != null) + " doors and hatches; opening them in a moment...");
+            timer.Once(1.5f, () =>
+            {
+                foreach (var d in doorRun.doors)
+                {
+                    if (d.entity == null || d.entity.IsDestroyed) continue;
+                    try { d.closed = Snapshot(d.entity); } catch (Exception ex) { doorRun.errors.Add(d.prefab + " closed: " + ex.Message); }
+                    try
+                    {
+                        MethodInfo m = null;
+                        for (var t = d.entity.GetType(); t != null && m == null; t = t.BaseType)
+                            foreach (var mi in t.GetMethods(AllInstance))
+                            {
+                                var ps = mi.GetParameters();
+                                if (mi.Name == "SetOpen" && ps.Length >= 1 && ps[0].ParameterType == typeof(bool)) { m = mi; break; }
+                            }
+                        if (m != null)
+                        {
+                            var args = new object[m.GetParameters().Length];
+                            args[0] = true;
+                            for (var i = 1; i < args.Length; i++) { var pt = m.GetParameters()[i].ParameterType; args[i] = pt == typeof(bool) ? (object)true : (pt.IsValueType ? Activator.CreateInstance(pt) : null); }
+                            m.Invoke(d.entity, args);
+                            d.openMethod = "SetOpen(" + args.Length + ")";
+                        }
+                        else
+                        {
+                            d.entity.SetFlag(BaseEntity.Flags.Open, true);
+                            d.entity.SendNetworkUpdateImmediate();
+                            d.openMethod = "SetFlag(Open)";
+                        }
+                    }
+                    catch (Exception ex) { doorRun.errors.Add(d.prefab + " open: " + (ex.InnerException ?? ex).Message); }
+                }
+                timer.Once(4f, () =>
+                {
+                    foreach (var d in doorRun.doors)
+                    {
+                        if (d.entity == null || d.entity.IsDestroyed) continue;
+                        try { d.open = Snapshot(d.entity); } catch (Exception ex) { doorRun.errors.Add(d.prefab + " open snapshot: " + ex.Message); }
+                    }
+                    try { if (collapse != null) collapse.SetValue(null, collapseWas); } catch (Exception ex) { doorRun.errors.Add("restore collapse: " + ex.Message); }
+                    Interface.Oxide.DataFileSystem.WriteObject("BuildReplay/doors", doorRun);
+                    var removed = 0;
+                    foreach (var d in doorRun.doors) if (d.entity != null && !d.entity.IsDestroyed) { d.entity.Kill(); removed++; }
+                    Puts("BuildReplay: doors measured (" + doorRun.errors.Count + " errors). Saved to data/BuildReplay/doors.json; removed " + removed + " test pieces.");
+                    doorRun = null;
+                });
+            });
         }
     }
 }
