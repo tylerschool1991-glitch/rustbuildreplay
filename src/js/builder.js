@@ -225,13 +225,34 @@ const Builder = (function () {
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh.geometry.dispose(); }
     terrainMesh = makeTerrain(terrain);
     scene.add(terrainMesh);
+    buildDecor();
+  }
+  function buildDecor() {
+    if (decor) { scene.remove(decor.group); decor.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    decor = makeDecor({ heightAt, center: [0, 0], radius: 72, seed: terrain.seed, level: Look.level() });
+    scene.add(decor.group);
+    stage.decor = decor.group;
+    decor.group.visible = Look.cozy();
+    scene.userData.noAO = [stage.sky].concat(decor.noAO);
+    if (ready) decor.setAvoid(decorAvoid());
+  }
+  // Grass, stones and trees make way for foundations, steps and items on the ground.
+  function decorAvoid() {
+    const out = [];
+    all().forEach(p => {
+      if (p.kind === "F") out.push({ x: p.cx, z: p.cz, r: p.shape === "tri" ? 1.85 : 2.2 });
+      else if (p.kind === "FS") out.push({ x: p.mx + p.nx * 1.5, z: p.mz + p.nz * 1.5, r: 1.75 });
+      else if (p.kind === "X" && p.ground) { const c = CATALOG_BY_ID[p.prefab]; out.push({ x: p.x, z: p.z, r: c ? Math.hypot(c.w, c.d) / 2 + 0.15 : 1 }); }
+    });
+    return out;
   }
 
   // ---------- Pieces ----------
   const viewport = $("bviewport"), canvas = $("bcanvas");
   const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   let ready = false, active = false;
-  let renderer, scene, camera, controls, root, ghost = null, ghostPrefab = null;
+  let renderer, view, stage, dust, decor = null, scene, camera, controls, root, ghost = null, ghostPrefab = null;
+  const drops = new Map(); // pieces settling into place
 
   const S = { pieces: new Map(), sock: new Map(), events: [], nextId: 1, alias: new Map(), undo: [], redo: [], baseT: 0, resumeAt: null, name: "" };
   const ui = { slot: "plan", plan: "foundation", deploy: "cupboard.tool.deployed", recent: ["cupboard.tool.deployed", "box.wooden.large", "door.hinged.metal", "furnace", "sleepingbag_leather_deployed", "autoturret", "workbench1", "generator.wind.scrap"], cat: "Items", search: "", hammer: "stone", tool: "place", prefab: "foundation", grade: "stone", level: 0, rot: 0, hideAbove: true };
@@ -840,9 +861,29 @@ const Builder = (function () {
     const why = validate(c);
     if (why) return flash(why);
     const p = doPlace(c);
+    settle(p);
     const ops = [{ type: "place", p: snapshot(p) }];
     collapse(ops);
     commit(ops);
+  }
+  // A placed piece drops the last few centimetres into place with a little puff of dust (Cozy only).
+  function settle(p) {
+    if (reduceMotion || !Look.cozy() || !p.mesh) return;
+    drops.set(p.id, { start: performance.now(), mesh: p.mesh, y: p.mesh.position.y, p, puffed: false });
+  }
+  function runDrops(now) {
+    drops.forEach((d, id) => {
+      const e = Math.min(1, (now - d.start) / 260);
+      d.mesh.position.y = d.y + Math.pow(1 - e, 3) * 0.55;
+      if (e >= 1) {
+        d.mesh.position.y = d.y;
+        drops.delete(id);
+        const pp = d.p, big = pp.kind === "F" || pp.kind === "FL" || pp.kind === "RF";
+        const x = pp.kind === "W" || pp.kind === "D" || pp.kind === "FS" ? pp.mx : pp.cx !== undefined ? pp.cx : pp.pos[0];
+        const z = pp.kind === "W" || pp.kind === "D" || pp.kind === "FS" ? pp.mz : pp.cz !== undefined ? pp.cz : pp.pos[2];
+        dust.emit(x, d.y + (pp.kind === "F" ? -0.05 : 0.02), z, big ? 1.4 : 0.7, big ? 26 : 12);
+      }
+    });
   }
   function actDemolish(id) {
     const ops = [];
@@ -1214,6 +1255,7 @@ const Builder = (function () {
   }
   function afterChange() {
     S.solved = null;
+    if (decor) decor.setAvoid(decorAvoid());
     refreshVisibility();
     updateStats();
     save();
@@ -1442,22 +1484,20 @@ const Builder = (function () {
   function resize() {
     const w = viewport.clientWidth, h = viewport.clientHeight;
     if (!w || !h) return;
-    renderer.setSize(w, h, false);
+    view.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     Walk.resize(w, h);
   }
   function init() {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    const stage = makeStage();
+    view = Look.makeView(canvas);
+    renderer = view.renderer;
+    stage = makeStage();
     scene = stage.scene;
+    stage.gridWanted = false;
     stage.grid.visible = false;
     stage.ground.visible = false;
-    scene.fog = new THREE.Fog(SKY, 55, 150);
+    dust = makeDust(scene);
     camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
     controls = new THREE.OrbitControls(camera, canvas);
     // Left-drag orbits, middle-drag (or Shift+drag) pans; right button is reserved for the wheel.
@@ -1474,6 +1514,8 @@ const Builder = (function () {
     setTerrain(saved && saved.seed ? saved.seed : newSeed());
     if (saved && Array.isArray(saved.pieces)) restore(saved); else seedStarter();
     buildPanels();
+    Look.mountPanel(viewport);
+    Look.onChange(() => { if (decor && decor.level !== Look.level()) buildDecor(); });
     selectSlot("plan");
     afterChange();
     frameBuild();
@@ -1525,13 +1567,21 @@ const Builder = (function () {
     const dt = Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
     if (active) {
+      Look.tick(dt);
+      runDrops(now);
+      dust.update(dt);
       if (Walk.active()) {
         Walk.update(dt);
-        renderer.render(scene, Walk.camera());
+        const wc = Walk.camera();
+        Look.follow(stage, wc.position);
+        view.render(scene, wc, stage);
       } else {
         if (fly.step(dt, camera, controls)) updateHover();
+        controls.autoRotate = Look.state.orbit && !reduceMotion;
+        controls.autoRotateSpeed = 0.35;
         controls.update();
-        renderer.render(scene, camera);
+        Look.follow(stage, controls.target);
+        view.render(scene, camera, stage);
       }
     }
     requestAnimationFrame(tick);
@@ -1548,7 +1598,7 @@ const Builder = (function () {
       const ids = {};
       list.forEach(sp => {
         const kind = kindOf(sp.prefab), shape = SHAPE[sp.prefab], [x, y, z] = sp.at || [0, 0, 0];
-        let c = { prefab: sp.prefab, kind, grade: "twigs", L: 0, by: y - 1 };
+        let c = { prefab: sp.prefab, kind, grade: sp.grade || "twigs", L: 0, by: y - 1 };
         if (kind === "W") { const a = sp.yaw % 180 === 0 ? 0 : 90; Object.assign(c, { mx: x, mz: z, a, nx: cosd(a), nz: sind(a), rot: wallRot(a) }); }
         else if (sp.attachTo !== undefined) {
           const host = S.pieces.get(ids[sp.attachTo]);
@@ -1569,6 +1619,7 @@ const Builder = (function () {
     setLevel, selectSlot, startWalk,
     state: () => ({ slot: ui.slot, tool: ui.tool, prefab: ui.prefab, grade: ui.grade, hammer: ui.hammer }),
     newTerrain(seed) { clearAll(); setTerrain(seed); frameBuild(); },
+    view(pos, target) { camera.position.set(pos[0], pos[1], pos[2]); controls.target.set(target[0], target[1], target[2]); controls.update(); },
     ground: (x, z) => heightAt(x, z),
     toScreen(x, y, z) { projV.set(x, y, z).project(camera); return [(projV.x + 1) / 2 * canvas.clientWidth, (1 - projV.y) / 2 * canvas.clientHeight]; },
     placeAt(x, z, y) {

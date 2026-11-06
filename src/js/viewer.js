@@ -3,14 +3,13 @@ const Viewer = (function () {
   const canvas = $("scene"), viewport = $("viewport");
   const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputEncoding = THREE.sRGBEncoding;
-
+  const gfx = Look.makeView(canvas);
   const stage = makeStage();
   const scene = stage.scene;
+  const dust = makeDust(scene);
+  let decor = null;
+  const followGoal = new THREE.Vector3();
+  let followSet = false;
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
   const controls = new THREE.OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -18,7 +17,7 @@ const Viewer = (function () {
   controls.maxPolarAngle = Math.PI * 0.49;
   controls.minDistance = 5;
   controls.maxDistance = 90;
-  controls.autoRotateSpeed = 0.7;
+  controls.autoRotateSpeed = 0.35;
   const root = new THREE.Group();
   scene.add(root);
 
@@ -92,6 +91,7 @@ const Viewer = (function () {
         for (let i = idx; i < n; i++) {
           const e = view[i];
           if (e.op === "place" || e.op === "upgrade") anims.set(e.id, { type: e.op, start: now });
+          if (e.op === "place") { followGoal.set(e.pos[0], e.pos[1] + 1, e.pos[2]); followSet = true; }
         }
       }
       idx = n;
@@ -110,11 +110,14 @@ const Viewer = (function () {
     anims.forEach((a, id) => {
       const pc = world.pieces.get(id);
       if (!pc) { anims.delete(id); return; }
-      const dur = a.type === "place" ? 380 : 320;
+      const dur = a.type === "place" ? (Look.cozy() ? 300 : 380) : 320;
       const e = Math.min(1, (now - a.start) / dur);
-      if (a.type === "place") pc.group.position.y = pc.baseY + Math.pow(1 - e, 3) * 2.2;
+      if (a.type === "place") pc.group.position.y = pc.baseY + Math.pow(1 - e, 3) * (Look.cozy() ? 0.7 : 2.2);
       else { const s = 1 + 0.07 * Math.sin(Math.PI * e); pc.group.scale.set(s, s, s); }
-      if (e >= 1) { pc.group.position.y = pc.baseY; pc.group.scale.set(1, 1, 1); anims.delete(id); }
+      if (e >= 1) {
+        pc.group.position.y = pc.baseY; pc.group.scale.set(1, 1, 1); anims.delete(id);
+        if (a.type === "place" && Look.cozy() && speed <= 16) { const p = pc.group.position; dust.emit(p.x, p.y + 0.02, p.z, pc.structural ? 1.1 : 0.5, pc.structural ? 16 : 6); }
+      }
     });
   }
 
@@ -212,13 +215,35 @@ const Viewer = (function () {
     }
   }
 
+  // Meadow around the base, clear of its foundations, ground items and rock formations.
+  function buildDecor() {
+    if (decor) { scene.remove(decor.group); decor.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+    const ctr = frameFor(log, world.y0).target;
+    let seed = 7; (log.slug || log.name || "").split("").forEach(ch => { seed = (seed * 31 + ch.charCodeAt(0)) | 0; });
+    decor = makeDecor({ heightAt: heightSampler(log.terrain), center: [ctr.x, ctr.z], radius: 60, seed, level: Look.level() });
+    const fin = stateAt(log.events, log.events.length), keep = [];
+    log.events.forEach(e => {
+      if (e.op !== "place" || !fin.get(e.id) || !fin.get(e.id).present) return;
+      if (/^foundation/.test(e.prefab)) keep.push({ x: e.pos[0], z: e.pos[2], r: e.prefab === "foundation.triangle" ? 1.85 : 2.2 });
+      else if (e.pos[1] - world.y0 < 0.6 && CATALOG_BY_ID[e.prefab]) { const c = CATALOG_BY_ID[e.prefab]; keep.push({ x: e.pos[0], z: e.pos[2], r: Math.hypot(c.w, c.d) / 2 + 0.15 }); }
+    });
+    (log.features || []).forEach(f => keep.push({ x: f.pos[0], z: f.pos[2], r: 11 * (f.scale || 1) }));
+    decor.setAvoid(keep);
+    scene.add(decor.group);
+    stage.decor = decor.group;
+    decor.group.visible = Look.cozy();
+    scene.userData.noAO = [stage.sky].concat(decor.noAO);
+  }
   function open(l) {
     setPlaying(false);
     resetAnims();
     log = l;
     disposeWorld(root);
     world = buildWorld(log, root);
-    stage.grid.visible = !world.hasTerrain;
+    buildDecor();
+    stage.gridWanted = !world.hasTerrain;
+    stage.grid.visible = !world.hasTerrain && !Look.cozy();
+    followSet = false;
     const f = frameFor(log, world.y0);
     controls.target.copy(f.target);
     camera.position.copy(f.position);
@@ -279,9 +304,11 @@ const Viewer = (function () {
   ui.xray.addEventListener("change", e => setXray(e.target.checked));
   ui.ghost.addEventListener("change", e => setRockGhost(e.target.checked));
   const orbitBox = $("optOrbit");
-  orbitBox.checked = !reduceMotion;
-  controls.autoRotate = orbitBox.checked;
-  orbitBox.addEventListener("change", e => { controls.autoRotate = e.target.checked; });
+  orbitBox.checked = Look.state.orbit;
+  orbitBox.addEventListener("change", e => Look.set({ orbit: e.target.checked }));
+  Look.onChange(st => { orbitBox.checked = st.orbit; });
+  Look.onChange(() => { if (log && world && decor && decor.level !== Look.level()) buildDecor(); });
+  Look.mountPanel(viewport, { follow: true, onCinema: on => { if (on && !playing) { if (pt >= duration) { pt = 0; forceSync(); } setPlaying(true); } } });
 
   document.addEventListener("keydown", e => {
     if (!active) return;
@@ -315,7 +342,7 @@ const Viewer = (function () {
   function resize() {
     const w = viewport.clientWidth, h = viewport.clientHeight;
     if (!w || !h) return;
-    renderer.setSize(w, h, false);
+    gfx.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -334,9 +361,20 @@ const Viewer = (function () {
         sync(true);
       }
       runAnims(now);
+      dust.update(dt);
+      Look.tick(dt);
       fly.step(dt, camera, controls);
+      // Follow the build: during a replay the camera eases toward where pieces are going up.
+      if (playing && followSet && Look.state.follow && !reduceMotion) {
+        const k = 1 - Math.exp(-dt * 0.9);
+        const dx = (followGoal.x - controls.target.x) * k, dy = (followGoal.y - controls.target.y) * k * 0.6, dz = (followGoal.z - controls.target.z) * k;
+        controls.target.x += dx; controls.target.y += dy; controls.target.z += dz;
+        camera.position.x += dx; camera.position.y += dy; camera.position.z += dz;
+      }
+      controls.autoRotate = Look.state.orbit && !reduceMotion;
       controls.update();
-      renderer.render(scene, camera);
+      Look.follow(stage, controls.target);
+      gfx.render(scene, camera, stage);
     }
     requestAnimationFrame(tick);
   }

@@ -16,7 +16,9 @@ const Archive = (function () {
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.outputEncoding = THREE.sRGBEncoding;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
     const st = makeStage();
+    r.toneMappingExposure = st.exposure || 1;
     const cam = new THREE.PerspectiveCamera(38, 1.6, 0.1, 400);
     const root = new THREE.Group();
     st.scene.add(root);
@@ -26,8 +28,10 @@ const Archive = (function () {
       const w = buildWorld(log, root);
       applyPieces(w, stateAt(log.events, log.events.length), 99);
       setRockGhost(log.setting === "cave");
-      st.grid.visible = !w.hasTerrain;
+      st.gridWanted = !w.hasTerrain;
+      st.grid.visible = !w.hasTerrain && !Look.cozy();
       const f = frameFor(log, w.y0);
+      Look.follow(st, f.target);
       cam.position.copy(f.position).sub(f.target).multiplyScalar(0.76).add(f.target);
       cam.lookAt(f.target);
       r.render(st.scene, cam);

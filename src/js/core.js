@@ -104,6 +104,8 @@ function noise3(x, y, z, s) {
     0.25 * Math.sin(x * 7.3 - z * 5.1 + s * 3.3) * Math.sin(y * 6.7 + s * 1.7)
   ) / 1.75;
 }
+// The same noise mapped to roughly 0..1 with a useful spread.
+const noise01 = (x, y, z, s) => Math.max(0, Math.min(1, 0.5 + 0.85 * noise3(x, y, z, s)));
 const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // Height of the lowest foundation; floors are counted from here so a base on a cliff still starts at "Ground floor".

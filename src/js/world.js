@@ -2,8 +2,8 @@
 // materials, building piece models, terrain, rock formations.
 
 const lin = hex => new THREE.Color(hex).convertSRGBToLinear();
-const SKY = 0x252a25;
-const GROUND_HEX = "#39422f";
+const SKY = 0xcfd8de;
+const GROUND_HEX = "#6c8b46";
 
 const MATS = {};
 GRADE_ORDER.forEach(k => {
@@ -23,12 +23,14 @@ const DMATS = {
   catMisc: solidMat("#4f6466")
 };
 const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x141713, transparent: true, opacity: 0.55 });
-const ROCK_MAT = new THREE.MeshStandardMaterial({ color: lin("#7a766c"), roughness: 1, flatShading: true, side: THREE.DoubleSide });
-const TERRAIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+const ROCK_MAT = new THREE.MeshStandardMaterial({ color: lin("#a39d90"), roughness: 0.95, flatShading: true, side: THREE.DoubleSide });
+const TERRAIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
 
+let xrayOn = false, gradeLookOn = false;
 function setXray(on) {
+  xrayOn = on;
   GRADE_ORDER.forEach(k => {
-    const base = GRADES[k].opacity;
+    const base = gradeLookOn ? 1 : GRADES[k].opacity;
     const op = on ? Math.min(base, 0.2) : base;
     MATS[k].opacity = op;
     MATS[k].transparent = op < 1;
@@ -44,6 +46,175 @@ function setRockGhost(on) {
   ROCK_MAT.needsUpdate = true;
 }
 setXray(false);
+
+// ---------- Grade materials (Cozy) ----------
+// Procedural textures, projected from three sides in world space so they tile evenly on any piece
+// without needing UVs. Twig is a lattice of lashed sticks you can partly see through, like in Rust.
+const GRADE_TEX = {};
+function gradeCanvas(kind) {
+  const N = 256, c = document.createElement("canvas");
+  c.width = c.height = N;
+  const g = c.getContext("2d"), R = rng((kind === "twigmask" ? 5 : kind.length) * 977 + 13);
+  const shade = (hex, f) => { const v = parseInt(hex.slice(1), 16); const ch = s => Math.max(0, Math.min(255, Math.round(((v >> s) & 255) * f))); return "rgb(" + ch(16) + "," + ch(8) + "," + ch(0) + ")"; };
+  const speckle = (n, a) => { for (let i = 0; i < n; i++) { g.fillStyle = R() < 0.5 ? "rgba(0,0,0," + a + ")" : "rgba(255,255,255," + a + ")"; g.fillRect(R() * N, R() * N, 1 + R() * 2, 1 + R() * 2); } };
+  if (kind === "twigs" || kind === "twigmask") {
+    const mask = kind === "twigmask";
+    g.fillStyle = mask ? "#000" : "#4b3b27"; g.fillRect(0, 0, N, N);
+    let x = 2;
+    while (x < N) {
+      const w = 20 + R() * 9;
+      if (x + w > N - 2) break;
+      const base = ["#d6b47a", "#c9a46a", "#bf9a62", "#d3b07a"][Math.floor(R() * 4)];
+      const grad = g.createLinearGradient(x, 0, x + w, 0);
+      grad.addColorStop(0, shade(base, 0.72)); grad.addColorStop(0.45, shade(base, 1.08)); grad.addColorStop(1, shade(base, 0.78));
+      g.fillStyle = mask ? "#fff" : grad;
+      g.fillRect(x, 0, w, N);
+      for (let k = 0; k < 3; k++) { const yy = R() * N; if (!mask) { g.fillStyle = shade(base, 0.6); g.beginPath(); g.ellipse(x + w / 2, yy, w * 0.22, 2.2, 0, 0, Math.PI * 2); g.fill(); } }
+      x += w + 7 + R() * 7;
+    }
+    [0.22, 0.72].forEach(f => {
+      const y = f * N;
+      g.fillStyle = mask ? "#fff" : "#d8c08b"; g.fillRect(0, y - 7, N, 14);
+      if (!mask) {
+        g.strokeStyle = "rgba(90,70,40,0.55)"; g.lineWidth = 1.2;
+        for (let xx = -10; xx < N + 10; xx += 6) { g.beginPath(); g.moveTo(xx, y - 7); g.lineTo(xx + 5, y + 7); g.stroke(); }
+      }
+    });
+  } else if (kind === "wood") {
+    const rows = 6, h = N / rows, pw = N;
+    const tones = ["#b07a48", "#a26f42", "#bb8653", "#9c6a40"];
+    for (let r = 0; r < rows; r++) {
+      const off = Math.floor(R() * pw);
+      for (let k = -1; k <= 1; k++) {
+        const x0 = off + k * pw, base = tones[r % 4];
+        g.fillStyle = base; g.fillRect(x0, r * h, pw, h);
+        g.strokeStyle = shade(base, 0.82); g.lineWidth = 1;
+        for (let q = 0; q < 4; q++) {
+          const yy = r * h + 5 + ((q * 37 + r * 11) % (h - 10)), amp = 0.8 + (q % 2) * 0.6;
+          g.beginPath(); g.moveTo(x0, yy);
+          for (let xx = 0; xx <= pw; xx += 8) g.lineTo(x0 + xx, yy + Math.sin(xx * 0.05 + q) * amp);
+          g.stroke();
+        }
+        g.fillStyle = "rgba(60,36,18,0.75)"; g.fillRect(x0, r * h, 2, h);
+        g.fillStyle = "#4a3422"; [0.3, 0.7].forEach(f => { g.beginPath(); g.arc(x0 + 7, r * h + h * f, 1.5, 0, 7); g.fill(); });
+      }
+      g.fillStyle = "rgba(55,34,16,0.8)"; g.fillRect(0, r * h, N, 2);
+      g.fillStyle = "rgba(255,230,190,0.14)"; g.fillRect(0, r * h + 2, N, 2);
+    }
+  } else if (kind === "stone") {
+    g.fillStyle = "#a39a88"; g.fillRect(0, 0, N, N);
+    const rows = 4, h = N / rows;
+    for (let r = 0; r < rows; r++) {
+      let x = -R() * 60;
+      while (x < N) {
+        const w = 64 + R() * 70, tone = ["#ddd2bd", "#d2c6af", "#e4dac6", "#c9bda6", "#d8ccb2"][Math.floor(R() * 5)];
+        const draw = xx => {
+          g.fillStyle = tone; g.fillRect(xx + 3, r * h + 3, w - 6, h - 6);
+          g.fillStyle = "rgba(255,255,255,0.18)"; g.fillRect(xx + 3, r * h + 3, w - 6, 3); g.fillRect(xx + 3, r * h + 3, 3, h - 6);
+          g.fillStyle = "rgba(0,0,0,0.14)"; g.fillRect(xx + 3, r * h + h - 6, w - 6, 3); g.fillRect(xx + w - 6, r * h + 3, 3, h - 6);
+        };
+        draw(x); if (x + w > N) draw(x - N);
+        x += w;
+      }
+    }
+    speckle(2600, 0.06);
+  } else if (kind === "metal") {
+    const cols = 2, w = N / cols;
+    for (let k = 0; k < cols; k++) {
+      const base = ["#9a6142", "#8c5a3e"][k];
+      const grad = g.createLinearGradient(0, 0, 0, N);
+      grad.addColorStop(0, shade(base, 1.08)); grad.addColorStop(1, shade(base, 0.86));
+      g.fillStyle = grad; g.fillRect(k * w, 0, w, N);
+      for (let i = 0; i < 9; i++) { g.fillStyle = "rgba(" + (R() < 0.5 ? "60,40,30" : "150,140,125") + ",0.18)"; g.beginPath(); g.ellipse(k * w + R() * w, R() * N, 8 + R() * 22, 5 + R() * 30, R() * 3, 0, 7); g.fill(); }
+      g.fillStyle = "rgba(30,18,12,0.7)"; g.fillRect(k * w, 0, 3, N);
+      g.fillStyle = "rgba(255,220,190,0.18)"; g.fillRect(k * w + 3, 0, 2, N);
+      for (let y = 10; y < N; y += 30) { g.fillStyle = "#5e3a28"; g.beginPath(); g.arc(k * w + 10, y, 2.6, 0, 7); g.fill(); g.fillStyle = "rgba(255,230,200,0.4)"; g.beginPath(); g.arc(k * w + 9.3, y - 0.8, 1, 0, 7); g.fill(); }
+    }
+    speckle(1500, 0.05);
+  } else {
+    const cells = 2, w = N / cells;
+    for (let i = 0; i < cells; i++) for (let j = 0; j < cells; j++) {
+      const grad = g.createLinearGradient(i * w, j * w, i * w + w, j * w + w);
+      grad.addColorStop(0, "#7d8a95"); grad.addColorStop(1, "#5d6873");
+      g.fillStyle = grad; g.fillRect(i * w, j * w, w, w);
+      g.fillStyle = "rgba(20,26,32,0.8)"; g.fillRect(i * w, j * w, w, 3); g.fillRect(i * w, j * w, 3, w);
+      g.fillStyle = "rgba(220,230,240,0.16)"; g.fillRect(i * w + 3, j * w + 3, w - 6, 2);
+      [[14, 14], [w - 14, 14], [14, w - 14], [w - 14, w - 14]].forEach(([bx, by]) => {
+        g.fillStyle = "#3e4750"; g.beginPath(); g.arc(i * w + bx, j * w + by, 4.5, 0, 7); g.fill();
+        g.fillStyle = "rgba(230,236,240,0.35)"; g.beginPath(); g.arc(i * w + bx - 1, j * w + by - 1, 1.6, 0, 7); g.fill();
+      });
+      for (let k = 0; k < 6; k++) { g.strokeStyle = "rgba(230,236,240,0.08)"; g.beginPath(); const sx = i * w + R() * w, sy = j * w + R() * w; g.moveTo(sx, sy); g.lineTo(sx + R() * 30 - 15, sy + R() * 12 - 6); g.stroke(); }
+    }
+    speckle(1200, 0.04);
+  }
+  return c;
+}
+const TRI_SCALE = { twigs: 1 / 1.5, wood: 1 / 1.5, stone: 1 / 1.5, metal: 1 / 1.5, toptier: 1 / 1.5 };
+const GRADE_FEEL = { twigs: [0.95, 0], wood: [0.85, 0], stone: [0.92, 0], metal: [0.6, 0.18], toptier: [0.5, 0.25] };
+function triplanar(mat, scale) {
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.triScale = { value: scale };
+    sh.uniforms.triMask = { value: mat.userData.triMask || null };
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vTriP; varying vec3 vTriN;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvTriP = (modelMatrix * vec4(transformed, 1.0)).xyz; vTriN = normalize(mat3(modelMatrix) * objectNormal);");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float triScale; uniform sampler2D triMask; varying vec3 vTriP; varying vec3 vTriN;")
+      .replace("#include <map_fragment>", [
+        "#ifdef USE_MAP",
+        "  vec3 tw = pow(abs(normalize(vTriN)), vec3(6.0)); tw /= (tw.x + tw.y + tw.z);",
+        "  vec4 tA = texture2D(map, vTriP.zy * triScale);",
+        "  vec4 tB = texture2D(map, vTriP.xz * triScale);",
+        "  vec4 tC = texture2D(map, vTriP.xy * triScale);",
+        "  vec4 texelColor = mapTexelToLinear(tA * tw.x + tB * tw.y + tC * tw.z);",
+        "  diffuseColor.rgb *= texelColor.rgb;",
+        "  #ifdef TRI_MASK",
+        "    // Walls show gaps between the sticks; floors and foundation tops stay solid.",
+        "    float mA = texture2D(triMask, vTriP.zy * triScale).r, mC = texture2D(triMask, vTriP.xy * triScale).r;",
+        "    diffuseColor.a *= mA * tw.x + tw.y + mC * tw.z;",
+        "  #endif",
+        "#endif"
+      ].join("\n"));
+  };
+  mat.customProgramCacheKey = () => "tri" + scale;
+}
+function setGradeLook(on) {
+  gradeLookOn = on;
+  GRADE_ORDER.forEach(k => {
+    const m = MATS[k];
+    if (on) {
+      if (!GRADE_TEX[k]) {
+        const t = new THREE.CanvasTexture(gradeCanvas(k));
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.encoding = THREE.sRGBEncoding;
+        t.anisotropy = 4;
+        GRADE_TEX[k] = t;
+      }
+      m.map = GRADE_TEX[k];
+      m.color.set(0xffffff);
+      m.roughness = GRADE_FEEL[k][0];
+      m.metalness = GRADE_FEEL[k][1];
+      m.alphaTest = k === "twigs" ? 0.5 : 0;
+      if (k === "twigs") {
+        if (!GRADE_TEX.twigmask) { const t = new THREE.CanvasTexture(gradeCanvas("twigmask")); t.wrapS = t.wrapT = THREE.RepeatWrapping; GRADE_TEX.twigmask = t; }
+        m.userData.triMask = GRADE_TEX.twigmask;
+        m.defines = { TRI_MASK: "" };
+      }
+      m.side = k === "twigs" ? THREE.DoubleSide : THREE.FrontSide;
+      triplanar(m, TRI_SCALE[k]);
+    } else {
+      m.map = null;
+      m.color.copy(lin(GRADES[k].hex));
+      m.roughness = 0.85; m.metalness = GRADES[k].metal;
+      m.alphaTest = 0; m.side = THREE.FrontSide;
+      m.defines = {};
+      m.onBeforeCompile = () => {};
+      m.customProgramCacheKey = () => "plain";
+    }
+    m.needsUpdate = true;
+  });
+  setXray(xrayOn);
+}
 
 // ---------- Building pieces ----------
 // Local frame: origin at the piece's base centre; walls run along local x and face local z.
@@ -213,11 +384,37 @@ function wallGeo(outline, holes, d) {
   if (geoCache.has(key)) return geoCache.get(key);
   const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
   holes.forEach(h => shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y)))));
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false });
-  geo.translate(0, 0, -d / 2);
-  const res = { geo, edges: new THREE.EdgesGeometry(geo, 20) };
+  const sharp = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false });
+  sharp.translate(0, 0, -d / 2);
+  // Softly rounded edges that stay inside the measured outline: shrink the shape by the bevel, then let
+  // the bevel grow it back to exactly the original size. Outlines (for "Accurate") come from the sharp one.
+  const b = 0.028;
+  let geo = sharp;
+  try {
+    const inset = new THREE.Shape(offsetPoly(outline, b).map(([x, y]) => new THREE.Vector2(x, y)));
+    holes.forEach(h => inset.holes.push(new THREE.Path(offsetPoly(h, -b).map(([x, y]) => new THREE.Vector2(x, y)))));
+    geo = new THREE.ExtrudeGeometry(inset, { depth: d - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 4 });
+    geo.translate(0, 0, -(d - 2 * b) / 2);
+  } catch (err) { geo = sharp; }
+  const res = { geo, edges: new THREE.EdgesGeometry(sharp, 20) };
   geoCache.set(key, res);
   return res;
+}
+// Moves every edge of a simple polygon inward by d (outward when d < 0), keeping corners mitred.
+function offsetPoly(pts, d) {
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) { const a = pts[i], b2 = pts[(i + 1) % pts.length]; area += a[0] * b2[1] - b2[0] * a[1]; }
+  const sgn = area > 0 ? 1 : -1, n = pts.length;
+  return pts.map((p, i) => {
+    const a = pts[(i + n - 1) % n], c = pts[(i + 1) % n];
+    const e1 = [p[0] - a[0], p[1] - a[1]], e2 = [c[0] - p[0], c[1] - p[1]];
+    const l1 = Math.hypot(e1[0], e1[1]) || 1, l2 = Math.hypot(e2[0], e2[1]) || 1;
+    // Inward normals (left of each edge for a counter-clockwise polygon).
+    const n1 = [-e1[1] / l1 * sgn, e1[0] / l1 * sgn], n2 = [-e2[1] / l2 * sgn, e2[0] / l2 * sgn];
+    const m = [n1[0] + n2[0], n1[1] + n2[1]], dot = 1 + n1[0] * n2[0] + n1[1] * n2[1];
+    const k = d / Math.max(0.2, dot);
+    return [p[0] + m[0] * k, p[1] + m[1] * k];
+  });
 }
 const partGeo = p => (p.outline ? wallGeo(p.outline, p.holes, p.d) : p.poly ? slabGeo(p.poly, p.tops, p.t) : boxGeo(p.w, p.h, p.d));
 function placePart(obj, p) {
@@ -324,15 +521,18 @@ function makeTerrain(t) {
   geo.rotateX(-Math.PI / 2);
   geo.computeVertexNormals();
   const nrm = geo.attributes.normal;
-  const grass = lin(GROUND_HEX), dirt = lin("#4d4735"), rock = lin("#66625a");
+  const grass = lin("#6f8f47"), lush = lin("#5a7d3c"), dry = lin("#98995a"), dirt = lin("#8a755a"), rock = lin("#8d887e");
   const col = new Float32Array(pos.count * 3);
   const c = new THREE.Color();
   for (let k = 0; k < pos.count; k++) {
     const x = pos.getX(k), z = pos.getZ(k), ny = nrm.getY(k);
     const y = pos.getY(k);
-    c.copy(grass).lerp(dirt, Math.max(0, Math.min(1, 0.35 + 0.55 * noise3(x * 0.09, 0.5, z * 0.09, 3))));
-    c.multiplyScalar(0.86 + 0.03 * Math.min(8, Math.max(0, y)));      // higher ground slightly lighter
-    if (ny < 0.9) c.lerp(rock, Math.min(1, (0.9 - ny) / 0.25));
+    // Meadow: patches of lusher and drier grass, the odd bare patch, rock where it gets steep.
+    const n1 = noise01(x * 0.05, 0.5, z * 0.05, 3), n2 = noise01(x * 0.13, 1.7, z * 0.13, 7);
+    c.copy(grass).lerp(lush, smoothstep(0.45, 0.75, n1)).lerp(dry, smoothstep(0.55, 0.85, n2) * 0.6);
+    c.lerp(dirt, smoothstep(0.8, 0.95, noise01(x * 0.07, 3.1, z * 0.07, 11)) * 0.6);
+    c.multiplyScalar(0.94 + 0.012 * Math.min(8, Math.max(0, y)));
+    if (ny < 0.88) c.lerp(rock, Math.min(1, (0.88 - ny) / 0.22));
     col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
   }
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -340,6 +540,18 @@ function makeTerrain(t) {
   mesh.receiveShadow = true; mesh.castShadow = true;
   mesh.userData.own = true;
   return mesh;
+}
+
+// Ground height under any point of a log's terrain (flat ground when the log has none).
+function heightSampler(t) {
+  if (!t) return () => -0.03;
+  const step = t.size / (t.res - 1), half = t.size / 2;
+  return (x, z) => {
+    const fx = Math.max(0, Math.min(t.res - 1.001, (x + half) / step)), fz = Math.max(0, Math.min(t.res - 1.001, (z + half) / step));
+    const j = Math.floor(fx), i = Math.floor(fz), u = fx - j, v = fz - i;
+    const H = (ii, jj) => t.heights[ii * t.res + jj] || 0;
+    return H(i, j) * (1 - u) * (1 - v) + H(i, j + 1) * u * (1 - v) + H(i + 1, j) * (1 - u) * v + H(i + 1, j + 1) * u * v;
+  };
 }
 
 // ---------- Rock formations ----------
@@ -432,19 +644,24 @@ function applyPieces(world, state, maxLevel) {
   return up;
 }
 
-function makeStage() {
+function makeStage(opts) {
+  opts = opts || {};
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 50, 130);
-  scene.add(new THREE.HemisphereLight(0xece6d2, 0x2b3029, 0.85));
-  const sun = new THREE.DirectionalLight(0xfff0d4, 0.95);
-  sun.position.set(18, 30, 14);
+  scene.fog = new THREE.Fog(0xcfd8de, 40, 190);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.7);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  const sc = sun.shadow.camera; sc.left = -34; sc.right = 34; sc.top = 34; sc.bottom = -34; sc.near = 1; sc.far = 100;
-  sun.shadow.bias = -0.0008;
-  scene.add(sun);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: lin(GROUND_HEX), roughness: 1 }));
+  const sc = sun.shadow.camera; sc.left = -36; sc.right = 36; sc.top = 36; sc.bottom = -36; sc.near = 10; sc.far = 200;
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.06;
+  scene.add(sun, sun.target);
+  // A faint light from the other side so shaded walls keep some shape.
+  const fill = new THREE.DirectionalLight(0xffffff, 0.15);
+  fill.position.set(-40, 25, 30);
+  scene.add(fill);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), new THREE.MeshStandardMaterial({ color: lin(GROUND_HEX), roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.03;
   ground.receiveShadow = true;
@@ -452,7 +669,7 @@ function makeStage() {
   const grid = new THREE.GridHelper(72, 24, 0x4a5440, 0x414a38); // the 3 m Rust building grid
   grid.position.y = 0.01;
   scene.add(grid);
-  return { scene, grid, ground };
+  return Look.register({ scene, grid, ground, sun, hemi, fill });
 }
 
 // WASD moves the camera across the ground (relative to where it's facing); the mouse still rotates and zooms.

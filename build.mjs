@@ -11,10 +11,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const read = p => fs.readFileSync(path.join(here, p), "utf8");
 
 // Order matters: later files use names declared in earlier ones.
-const ORDER = ["measured", "core", "world", "autoorder", "samples", "viewer", "walk", "builder", "archive", "main"];
+const ORDER = ["measured", "core", "world", "fx", "decor", "autoorder", "samples", "viewer", "walk", "builder", "archive", "main"];
 
 const css = read("src/styles.css");
+// three.js r128 example modules (MIT), bundled so post-processing doesn't depend on more CDN requests.
+const VENDOR = ["SimplexNoise", "CopyShader", "SSAOShader", "LuminosityHighPassShader", "FXAAShader", "EffectComposer", "RenderPass", "ShaderPass", "SSAOPass", "UnrealBloomPass"];
 const js =
+  VENDOR.map(n => `// ---------- vendor/${n}.js ----------\n` + read(`src/vendor/${n}.js`)).join("\n") + "\n" +
   '(function () {\n"use strict";\n' +
   ORDER.map(n => `// ---------- ${n}.js ----------\n` + read(`src/js/${n}.js`)).join("\n") +
   "\n})();\n";
