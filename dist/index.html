@@ -7427,7 +7427,7 @@ const Builder = (function () {
     FS: "Foundation steps go on the outer edge of a foundation",
     W: "Walls go on a foundation or floor edge, or on top of a wall or half wall",
     FL: "Floors attach to a wall or half-wall top, the middle of a plain wall, or another floor's edge",
-    RF: "A roof's low edge goes on a wall or half-wall top, or a foundation or floor edge",
+    RF: "A roof's low edge goes on a free wall or half-wall top, a foundation or floor edge, or a roof's high edge",
     S: "Stairs need a foundation or solid floor of the same shape",
     D: "This goes in a matching wall opening",
     H: "This goes in a floor frame of the same shape",
@@ -7438,7 +7438,7 @@ const Builder = (function () {
     FS: "Point at the outer edge of a foundation",
     W: "Point at the edge of a foundation or floor",
     FL: "Point above a wall or half wall, at the middle of a wall, or next to another floor",
-    RF: "Point above a wall top or the edge of a foundation or floor",
+    RF: "Point at a free wall or half-wall top, a foundation or floor edge, or a roof's high edge (R flips which way it rises)",
     S: "Point at a foundation or solid floor of the same shape",
     D: "Point at a matching wall opening on this floor",
     H: "Point at a floor frame of the same shape",
@@ -7620,7 +7620,9 @@ const Builder = (function () {
 
   function keyOf(p) {
     switch (p.kind) {
-      case "F": case "FL": case "RF": return fpKey(p.cx, p.cz, Hof(p));
+      case "F": case "FL": return fpKey(p.cx, p.cz, Hof(p));
+      // Roofs only clash with roofs: a floor (a ceiling) can sit in the same square, as in Rust.
+      case "RF": return "R" + fpKey(p.cx, p.cz, Hof(p));
       case "S": return "S" + fpKey(p.cx, p.cz, Hof(p)) + ":" + (p.half || 0);
       case "W": return edgeKey(p, Hof(p));
       case "D": return "D" + edgeKey(p, Hof(p));
@@ -7628,6 +7630,13 @@ const Builder = (function () {
       case "FS": return "FS" + edgeKey(p, Hof(p));
       default: return null;
     }
+  }
+  // Every spot a piece takes up. A roof also fills the Wall socket its low edge stands on (Rust's wall-top
+  // socket takes one piece), so nothing else goes on that wall top, and it can't go on a wall top that's taken.
+  function keysOf(p) {
+    const k = keyOf(p);
+    if (!k) return [];
+    return p.kind === "RF" ? [k, edgeKey(roofLow(p), Hof(p))] : [k];
   }
   function posOf(p) {
     switch (p.kind) {
@@ -7773,8 +7782,9 @@ const Builder = (function () {
       if (ht === 3) { add(p, H + 3, "W", true); both(p, H + 3, true); both(p, H + 1.5, p.prefab === "wall"); }
       else if (ht === 1.5) { add(p, H + 1.5, "W", true); both(p, H + 1.5, true); }
     } else if (p.kind === "RF") {
+      // Its low edge's Floor sockets are dummies in the game data (nothing attaches there), so only the
+      // square roof's high edge offers sockets: Wall and Floor (both sides), 3 m up.
       const lo = roofLow(p);
-      add(lo, H, "FL", true);
       if (p.shape === "sq") {
         const hi = { mx: 2 * p.cx - lo.mx, mz: 2 * p.cz - lo.mz, nx: -lo.nx, nz: -lo.nz, a: norm(lo.a + 180) };
         add(hi, H + 3, "W", true); add(hi, H + 3, "FL", true);
@@ -7960,8 +7970,7 @@ const Builder = (function () {
 
   function validate(c) {
     if (c.L > MAX_LEVEL + 1) return "That's as high as the sandbox goes for now";
-    const k = keyOf(c);
-    if (k && S.sock.has(k)) return "There's already a " + prefabName(get(k).prefab).toLowerCase() + " here";
+    for (const k of keysOf(c)) if (S.sock.has(k)) return "There's already a " + prefabName(get(k).prefab).toLowerCase() + " here";
     const poly = polyOf(c), H = Hof(c);
     if (c.kind === "F") {
       const g = groundUnder(poly);
@@ -7973,7 +7982,7 @@ const Builder = (function () {
       if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
     }
     if (c.kind === "FL" || c.kind === "RF") {
-      const hit = overlapsAny(poly, o => (o.kind === "FL" || o.kind === "RF") && sameH(Hof(o), H));
+      const hit = overlapsAny(poly, o => o.kind === c.kind && sameH(Hof(o), H));
       if (hit) return "Overlaps the " + prefabName(hit.prefab).toLowerCase();
       if (overlapsAny(poly, o => o.kind === "S" && Hof(o) < H - 0.1 && Hof(o) > H - 3.1)) return "The stairs below need this space open";
     }
@@ -8099,25 +8108,31 @@ const Builder = (function () {
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (best) c = { shape, L: best.L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: norm(-best.theta) };
     } else if (kind === "RF") {
-      // A roof's low edge goes on a Wall socket (a wall or half-wall top, or a foundation or floor edge)
-      // and it rises 3 m across its width. R turns it to stand on another edge under the same spot.
-      const opts = [];
+      // As in Rust: aim at a Wall socket (a wall or half-wall top, a foundation or floor edge, a square roof's
+      // high edge) and the roof's low edge snaps onto it. It first rises toward you; R turns it 180° to rise
+      // the other way from the same edge. A spot is skipped if the wall top is taken or a roof is already there.
+      const groups = new Map();
       allFemales("W").forEach(f => {
-        const L = Lfor(f.H, f.by);
-        if (!inCeil(L)) return;
+        const L = Lfor(f.H, f.by), ek = edgeKey(f.e, f.H);
+        if (!inCeil(L) || S.sock.has(ek)) return;
+        if (!groups.has(ek)) groups.set(ek, { ref: [f.e.mx, f.H + 0.15, f.e.mz], f, L, dirs: [] });
+        const g = groups.get(ek);
         [f.e, flip(f.e)].forEach(e => {
-          const fp = attach(e, shape), k = fpKey(fp.cx, fp.cz, f.H);
-          if (S.sock.has(k)) return;
+          const fp = attach(e, shape), k = "R" + fpKey(fp.cx, fp.cz, f.H);
+          if (S.sock.has(k) || g.dirs.some(o => o.k === k)) return;
           const dx = -e.nx, dz = -e.nz;
           const rot = norm((shape === "sq" ? Math.atan2(-dx, -dz) : Math.atan2(dx, dz)) * 180 / Math.PI);
-          if (opts.some(o => o.k === k && Math.abs(o.rot - rot) < 0.5)) return;
-          opts.push(Object.assign(fp, { k, by: f.by, L, rot, ref: [fp.cx, f.H + 0.75, fp.cz] }));
+          g.dirs.push(Object.assign(fp, { k, by: f.by, L, rot }));
         });
       });
+      const opts = Array.from(groups.values()).filter(g => g.dirs.length);
       const near = nearestOnScreen(opts, sx, sy, SNAP_PX);
       if (near) {
-        const same = opts.filter(o => o.k === near.k).sort((x, y) => x.rot - y.rot);
-        const best = same[((ui.rot % same.length) + same.length) % same.length];
+        // Toward the camera first: the side of the edge the camera is on.
+        const cam = camera.position, e = near.f.e;
+        const side = o => (o.cx - e.mx) * (cam.x - e.mx) + (o.cz - e.mz) * (cam.z - e.mz);
+        const dirs = near.dirs.slice().sort((x, y) => side(y) - side(x));
+        const best = dirs[((ui.rot % dirs.length) + dirs.length) % dirs.length];
         c = { shape, L: best.L, by: best.by, cx: best.cx, cz: best.cz, theta: best.theta, rot: best.rot };
       }
     } else if (kind === "S") {
@@ -8207,8 +8222,7 @@ const Builder = (function () {
     if (origId !== undefined) S.alias.set(origId, p.id);
     p.pos = posOf(p);
     S.pieces.set(p.id, p);
-    const k = keyOf(p);
-    if (k) S.sock.set(k, p.id);
+    keysOf(p).forEach(k => S.sock.set(k, p.id));
     makeMesh(p);
     emit({ op: "place", id: p.id, prefab: p.prefab, grade: p.grade, pos: p.pos.map(r3), rot: r3(p.rot) });
     return p;
@@ -8218,8 +8232,7 @@ const Builder = (function () {
     const p = S.pieces.get(id);
     if (!p) return null;
     S.pieces.delete(id);
-    const k = keyOf(p);
-    if (k && S.sock.get(k) === id) S.sock.delete(k);
+    keysOf(p).forEach(k => { if (S.sock.get(k) === id) S.sock.delete(k); });
     root.remove(p.mesh);
     if (highlighted && highlighted.id === id) highlighted = null;
     emit({ op: "remove", id });
@@ -8337,6 +8350,8 @@ const Builder = (function () {
   function actRotate(id) {
     const p = S.pieces.get(id);
     if (p.kind === "F" || p.kind === "FL" || p.kind === "FS" || p.kind === "H") return flash(prefabName(p.prefab) + " doesn't rotate");
+    // In Rust only walls turn once placed (the game data: canRotateAfterPlacement); roofs, stairs and ramps don't.
+    if (p.kind === "RF" || p.kind === "S") return flash(prefabName(p.prefab) + " can't be rotated once placed, same as in Rust");
     const step = p.kind === "W" || p.kind === "D" ? 180 : p.kind === "X" ? 90 : TURN[p.shape];
     const old = p.rot, nr = norm(old - step);
     if (p.kind === "X") {
@@ -8401,8 +8416,7 @@ const Builder = (function () {
     if (!d || !Array.isArray(d.pieces)) return false;
     d.pieces.forEach(p => {
       S.pieces.set(p.id, p);
-      const k = keyOf(p);
-      if (k) S.sock.set(k, p.id);
+      keysOf(p).forEach(k => S.sock.set(k, p.id));
       makeMesh(p);
     });
     S.events = Array.isArray(d.events) ? d.events : [];
