@@ -8347,11 +8347,27 @@ const Builder = (function () {
     doGrade(id, ui.grade);
     commit([{ type: "grade", id, from: old, to: ui.grade }]);
   }
+  function flipRoof(p) {
+    const lo = roofLow(p), dx = -lo.nx, dz = -lo.nz;
+    const c = Object.assign({}, p, attach(lo, p.shape), { rot: norm((p.shape === "sq" ? Math.atan2(-dx, -dz) : Math.atan2(dx, dz)) * 180 / Math.PI) });
+    delete c.id; delete c.mesh; delete c.pos;
+    // Check the flipped roof as if this one weren't there.
+    const keys = keysOf(p);
+    S.pieces.delete(p.id); keys.forEach(k => S.sock.delete(k)); S.solved = null;
+    const why = validate(c);
+    S.pieces.set(p.id, p); keys.forEach(k => S.sock.set(k, p.id)); S.solved = null;
+    if (why) return flash(why);
+    const ops = [{ type: "remove", p: doRemove(p.id) }];
+    ops.push({ type: "place", p: snapshot(doPlace(c)) });
+    collapse(ops);
+    commit(ops);
+  }
   function actRotate(id) {
     const p = S.pieces.get(id);
     if (p.kind === "F" || p.kind === "FL" || p.kind === "FS" || p.kind === "H") return flash(prefabName(p.prefab) + " doesn't rotate");
-    // In Rust only walls turn once placed (the game data: canRotateAfterPlacement); roofs, stairs and ramps don't.
-    if (p.kind === "RF" || p.kind === "S") return flash(prefabName(p.prefab) + " can't be rotated once placed, same as in Rust");
+    if (p.kind === "S") return flash(prefabName(p.prefab) + " can't be rotated once placed, same as in Rust");
+    // A placed roof flips 180° on the edge it stands on: same wall top, rising the other way.
+    if (p.kind === "RF") return flipRoof(p);
     const step = p.kind === "W" || p.kind === "D" ? 180 : p.kind === "X" ? 90 : TURN[p.shape];
     const old = p.rot, nr = norm(old - step);
     if (p.kind === "X") {
