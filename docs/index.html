@@ -7750,8 +7750,11 @@ const Builder = (function () {
   const WALL_HT = { "wall": 3, "wall.doorway": 3, "wall.window": 3, "wall.frame": 3, "wall.half": 1.5, "wall.low": 1 };
   const halfL = v => Math.round(v * 2) / 2;
   const Lfor = (H, by) => halfL((H - by - 1) / 3);
-  const inBand = L => L > ui.level - 0.01 && L < ui.level + 0.99;      // walls, stairs and items on this storey
-  const inCeil = L => L > ui.level + 0.01 && L < ui.level + 1.01;      // floors and roofs above it
+  // What the storey selector offers. Generous on purpose: half walls, mid-wall floors and walls on half walls
+  // put sockets between storey lines, and a storey's own floor (tops of the walls below) must be placeable
+  // while standing on that storey. Snapping still picks whichever spot is nearest the cursor.
+  const inBand = L => L > ui.level - 0.51 && L < ui.level + 0.99;      // walls, stairs and items
+  const inCeil = L => L > ui.level - 0.01 && L < ui.level + 1.51;      // floors and roofs
   function roofLow(p) {
     // The edge a roof stands on: its model's low side is local -z (square) or the base (+z) for a triangle.
     const r = rad(p.rot), ap = APOTHEM[p.shape];
@@ -8419,7 +8422,7 @@ const Builder = (function () {
     const placingCeiling = ui.tool === "place" && (k === "FL" || k === "RF" || k === "H");
     all().forEach(p => {
       let v = true;
-      if (ui.hideAbove) v = p.L < ui.level + 0.99 || (placingCeiling && (p.kind === "FL" || p.kind === "RF") && p.L < ui.level + 1.01);
+      if (ui.hideAbove) v = p.L < ui.level + 0.99 || (placingCeiling && (p.kind === "FL" || p.kind === "RF") && p.L < ui.level + 1.51);
       p.mesh.visible = v;
     });
   }
