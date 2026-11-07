@@ -778,10 +778,15 @@ const Builder = (function () {
     } else if (kind === "W") {
       // Wall sockets: foundation and floor edges, full-wall and half-wall tops, a square roof's high edge.
       const seen = new Set(), opts = [];
+      const ht = WALL_HT[prefab] || 3;
       allFemales("W").forEach(f => {
         const L = Lfor(f.H, f.by), k = edgeKey(f.e, f.H);
         if (!inBand(L) || seen.has(k)) return;
         seen.add(k);
+        // Skip spots that are taken (say, the foundation edge under a half wall), so aiming at the face of
+        // a wall snaps to the free spot on top of it rather than to the one it already fills.
+        if (S.sock.has(k)) return;
+        if (all().some(o => o.kind === "W" && Math.abs(o.mx - f.e.mx) < 0.05 && Math.abs(o.mz - f.e.mz) < 0.05 && Hof(o) < f.H + ht - 0.05 && Hof(o) + WALL_HT[o.prefab] > f.H + 0.05)) return;
         opts.push({ mx: f.e.mx, mz: f.e.mz, a: f.e.a, nx: f.e.nx, nz: f.e.nz, by: f.by, L, ref: [f.e.mx, f.H + 0.3, f.e.mz] });
       });
       const best = nearestOnScreen(opts, sx, sy, SNAP_PX);
